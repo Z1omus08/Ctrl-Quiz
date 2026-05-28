@@ -60,7 +60,7 @@ export interface User {
   id: string;
   email: string;
   fullName: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'teacher' | 'student';
 }
 
 export function getQuestionMaxPoints(question: Question): number {

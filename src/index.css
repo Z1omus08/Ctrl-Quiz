@@ -254,7 +254,7 @@ body {
   button.bg-rose-600:hover,
   button[class*="bg-pink-"]:hover,
   button[class*="bg-rose-"]:hover {
-    background-color: #F43F5E !important;
+    background-color: #EC4899 !important;
     transform: scale(1.02);
     box-shadow: 0 0 10px rgba(236, 72, 153, 0.4) !important;
   }
@@ -344,8 +344,8 @@ button.delete-btn-custom span {
 
 .delete-btn-custom:hover,
 button.delete-btn-custom:hover {
-  background-color: rgba(244, 114, 182, 0.16) !important;
-  background: rgba(244, 114, 182, 0.16) !important;
+  background-color: rgba(244, 114, 182, 0.08) !important;
+  background: rgba(244, 114, 182, 0.08) !important;
   color: #DB2777 !important;
   border-color: rgba(244, 114, 182, 0.35) !important;
 }
@@ -383,8 +383,8 @@ button.delete-btn-custom:hover span {
 
 .dark .delete-btn-custom:hover,
 .dark button.delete-btn-custom:hover {
-  background-color: rgba(249, 168, 212, 0.16) !important;
-  background: rgba(249, 168, 212, 0.16) !important;
+  background-color: rgba(249, 168, 212, 0.08) !important;
+  background: rgba(249, 168, 212, 0.08) !important;
   color: #F9A8D4 !important;
   border-color: rgba(249, 168, 212, 0.35) !important;
 }

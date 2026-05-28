@@ -6,16 +6,24 @@ import StudentQuiz from './components/StudentQuiz';
 import AdminPanel from './components/AdminPanel';
 import { 
   LogIn, UserPlus, Sparkles, GraduationCap, ArrowRight, Table, HelpCircle, 
-  Settings, Key, Layers, Server, Play, Heart, Star, CheckCircle, AlertTriangle, X
+  Settings, Key, Layers, Server, Play, Heart, Star, CheckCircle, AlertTriangle, X,
+  Sun, Moon, Monitor, Trash2, Plus, UserCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hashPassword } from './utils/hash';
 
-// Help pre-generate default teacher user
+// Help pre-generate default users
 const DEFAULT_TEACHER_USER: User = {
   id: 'teacher-1',
   email: 'nauczyciel@szkola.pl',
   fullName: 'mgr Wojciech Nowak',
+  role: 'teacher',
+};
+
+const DEFAULT_ADMIN_USER: User = {
+  id: 'admin-1',
+  email: 'admin',
+  fullName: 'admin',
   role: 'admin',
 };
 
@@ -27,7 +35,22 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // 2. Navigation State
-  const [currentView, setCurrentView] = useState<'home' | 'admin' | 'student-history'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'admin' | 'student-history'>(() => {
+    try {
+      const cached = localStorage.getItem('logged_in_user');
+      if (cached) {
+        const user = JSON.parse(cached);
+        if (user.role === 'admin' || user.role === 'teacher') {
+          return 'admin';
+        } else if (user.role === 'student') {
+          return 'student-history';
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return 'home';
+  });
   const [activeStudentRoom, setActiveStudentRoom] = useState<ActiveRoom | null>(null);
 
   // 3. Form input states for main game page
@@ -37,18 +60,26 @@ export default function App() {
   // 4. Modal Overlays
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
+
+  // Profile Settings form states
+  const [profileCurrentPassword, setProfileCurrentPassword] = useState('');
+  const [profileNewPassword, setProfileNewPassword] = useState('');
+  const [profileConfirmPassword, setProfileConfirmPassword] = useState('');
+  const [profileFullName, setProfileFullName] = useState('');
+  const [profileRegCodes, setProfileRegCodes] = useState<any[]>([]);
+  const [profileActiveTab, setProfileActiveTab] = useState<'profile' | 'codes'>('profile');
+  const [profileError, setProfileError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState('');
 
   // Auth form states
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authFullName, setAuthFullName] = useState('');
   const [authInviteCode, setAuthInviteCode] = useState('');
-  const [authRole, setAuthRole] = useState<'admin' | 'student'>('admin');
+  const [authRole, setAuthRole] = useState<'admin' | 'teacher' | 'student'>('teacher');
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
-
-  // 5. In-Screen Interactive Classroom Simulator toggle
-  const [isSimulatorEnabled, setIsSimulatorEnabled] = useState(true);
 
   // 6. Theme State ('light' | 'dark' | 'system')
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
@@ -86,12 +117,16 @@ export default function App() {
       setCurrentUser(JSON.parse(cachedUser));
     }
 
-    // Initialize default users in database (teacher and student)
+    // Initialize default users in database (admin and teacher only)
     const usersList = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    let updatedUsers = [...usersList];
     let listChanged = false;
+    // Filter out old default student to make sure we strictly have only admin and teacher by default
+    let updatedUsers = usersList.filter((u: any) => u.email !== 'uczen@szkola.pl');
+    if (updatedUsers.length !== usersList.length) {
+      listChanged = true;
+    }
 
-    const teacherExists = usersList.some((u: any) => u.email === DEFAULT_TEACHER_USER.email);
+    const teacherExists = updatedUsers.some((u: any) => u.email === DEFAULT_TEACHER_USER.email);
     if (!teacherExists) {
       updatedUsers.push({
         ...DEFAULT_TEACHER_USER,
@@ -100,26 +135,64 @@ export default function App() {
       listChanged = true;
     }
 
-    const studentExists = usersList.some((u: any) => u.email === 'uczen@szkola.pl');
-    if (!studentExists) {
+    // Ensure that the only possible admin account has email 'admin' and password 'ProgramDoTw0rz3ni4Qu1zow'
+    // Any other admin account gets converted to 'teacher'
+    let adminFound = false;
+    updatedUsers = updatedUsers.map((u: any) => {
+      if (u.email === 'admin') {
+        adminFound = true;
+        if (u.role !== 'admin' || u.password !== hashPassword('ProgramDoTw0rz3ni4Qu1zow') || u.fullName !== 'admin') {
+          listChanged = true;
+          return {
+            ...u,
+            fullName: 'admin',
+            role: 'admin',
+            password: hashPassword('ProgramDoTw0rz3ni4Qu1zow')
+          };
+        }
+      } else if (u.role === 'admin') {
+        listChanged = true;
+        return {
+          ...u,
+          role: 'teacher'
+        };
+      }
+      return u;
+    });
+
+    if (!adminFound) {
+      // Remove stale admin@szkola.pl if it exists
+      updatedUsers = updatedUsers.filter((u: any) => u.email !== 'admin@szkola.pl');
       updatedUsers.push({
-        id: 'student-1',
-        email: 'uczen@szkola.pl',
-        fullName: 'Kamil Kowalski',
-        role: 'student',
-        password: hashPassword('uczen123')
+        ...DEFAULT_ADMIN_USER,
+        password: hashPassword('ProgramDoTw0rz3ni4Qu1zow')
       });
       listChanged = true;
     }
 
-    // Migrate existing plain-text passwords in database to secure SHA-256 hashes
+    // Migrate existing plain-text passwords in database to secure SHA-256 hashes and force proper roles
     updatedUsers = updatedUsers.map((u: any) => {
+      let isChanged = false;
+      let newPass = u.password;
+      let newRole = u.role;
+
       const isHexSha256 = /^[a-f0-9]{64}$/.test(u.password || '');
       if (u.password && !isHexSha256) {
+        newPass = hashPassword(u.password);
+        isChanged = true;
+      }
+
+      if (u.email === 'nauczyciel@szkola.pl' && u.role === 'admin') {
+        newRole = 'teacher';
+        isChanged = true;
+      }
+
+      if (isChanged) {
         listChanged = true;
         return {
           ...u,
-          password: hashPassword(u.password)
+          password: newPass,
+          role: newRole
         };
       }
       return u;
@@ -132,7 +205,7 @@ export default function App() {
     // Initialize default teacher registration codes if empty
     const cachedCodes = localStorage.getItem('teacher_registration_codes');
     if (!cachedCodes) {
-      localStorage.setItem('teacher_registration_codes', JSON.stringify(['KOD-NAUCZYCIELA-2026', 'SZKOLA-MEMO-2026']));
+      localStorage.setItem('teacher_registration_codes', JSON.stringify([]));
     }
   }, []);
 
@@ -199,6 +272,29 @@ export default function App() {
       return () => mediaQuery.removeEventListener('change', handleChange);
     }
   }, [theme]);
+
+  // Tick every second to refresh registration code expiration visually and clean up expired ones
+  useEffect(() => {
+    let timer: any;
+    if (isProfileSettingsOpen && profileActiveTab === 'codes') {
+      timer = setInterval(() => {
+        const now = Date.now();
+        const rawCodes = localStorage.getItem('teacher_registration_codes');
+        let parsed: any[] = [];
+        try {
+          parsed = JSON.parse(rawCodes || '[]');
+        } catch (e) {}
+        
+        const nonExpired = parsed.filter((item: any) => {
+          if (typeof item === 'string') return true;
+          return item.expiresAt > now;
+        }).map(item => typeof item === 'string' ? { code: item, expiresAt: now + 600000 } : item);
+        
+        setProfileRegCodes(nonExpired);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isProfileSettingsOpen, profileActiveTab]);
 
   // Utility to update active rooms states
   const saveRoomsToCache = (rooms: ActiveRoom[]) => {
@@ -383,8 +479,8 @@ export default function App() {
     setAuthEmail('');
     setAuthPassword('');
 
-    // If logged in as admin, route to panel automatically
-    if (payload.role === 'admin') {
+    // If logged in as admin or teacher, route to panel automatically
+    if (payload.role === 'admin' || payload.role === 'teacher') {
       setCurrentView('admin');
     } else {
       setCurrentView('student-history');
@@ -413,9 +509,21 @@ export default function App() {
     }
 
     const verificationCode = authInviteCode.trim().toUpperCase();
-    const codesList: string[] = JSON.parse(localStorage.getItem('teacher_registration_codes') || '[]');
+    const codesList: any[] = JSON.parse(localStorage.getItem('teacher_registration_codes') || '[]');
     
-    if (!codesList.includes(verificationCode)) {
+    // Find the index of matching, active, non-expired registration code
+    const matchedCodeIndex = codesList.findIndex(c => {
+      const codeStr = (typeof c === 'string' ? c : c.code).toUpperCase();
+      if (codeStr !== verificationCode) return false;
+      
+      // If code is an object, check expiration
+      if (typeof c !== 'string' && c.expiresAt) {
+        return c.expiresAt > Date.now();
+      }
+      return true;
+    });
+
+    if (matchedCodeIndex === -1) {
       setAuthError('Podany kod rejestracji nauczyciela jest niepoprawny, został już zużyty lub wygasł.');
       return;
     }
@@ -433,11 +541,11 @@ export default function App() {
       email: authEmail.trim(),
       password: hashPassword(authPassword),
       fullName: authFullName.trim(),
-      role: 'admin' as const,
+      role: 'teacher' as const,
     };
 
-    // Consume the registration code
-    const updatedCodesList = codesList.filter(c => c !== verificationCode);
+    // Consume the registration code (automatically deletes it upon use)
+    const updatedCodesList = codesList.filter((_, index) => index !== matchedCodeIndex);
     localStorage.setItem('teacher_registration_codes', JSON.stringify(updatedCodesList));
 
     usersList.push(newUserPayload);
@@ -470,6 +578,126 @@ export default function App() {
     localStorage.removeItem('logged_in_user');
     setCurrentUser(null);
     setCurrentView('home');
+  };
+
+  const handleProfileSettingsSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileError('');
+    setProfileSuccess('');
+
+    if (!currentUser) return;
+
+    const name = profileFullName.trim();
+    if (!name) {
+      setProfileError('Nazwa użytkownika nie może być pusta.');
+      return;
+    }
+
+    const usersList = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    const userIndex = usersList.findIndex((u: any) => u.id === currentUser.id);
+
+    if (userIndex === -1) {
+      setProfileError('Nie znaleziono Twojego konta w bazie.');
+      return;
+    }
+
+    let isPasswordChanged = false;
+
+    if (profileCurrentPassword || profileNewPassword || profileConfirmPassword) {
+      if (!profileCurrentPassword || !profileNewPassword || !profileConfirmPassword) {
+        setProfileError('Aby zmienić hasło, musisz podać obecne hasło, nowe hasło oraz je potwierdzić.');
+        return;
+      }
+
+      if (profileNewPassword !== profileConfirmPassword) {
+        setProfileError('Nowe hasła nie są ze sobą zgodne.');
+        return;
+      }
+
+      // Walidacja nowego hasła: min 8 znaków, małe, duże litery, cyfra
+      const isLengthValid = profileNewPassword.length >= 8;
+      const hasUppercase = /[A-Z]/.test(profileNewPassword);
+      const hasLowercase = /[a-z]/.test(profileNewPassword);
+      const hasDigit = /[0-9]/.test(profileNewPassword);
+
+      if (!isLengthValid || !hasUppercase || !hasLowercase || !hasDigit) {
+        setProfileError('Nowe hasło musi mieć co najmniej 8 znaków, składać się z małych i dużych liter oraz zawierać cyfrę.');
+        return;
+      }
+
+      const currentHashed = hashPassword(profileCurrentPassword);
+      if (usersList[userIndex].password && usersList[userIndex].password !== currentHashed) {
+        setProfileError('Obecne hasło jest niepoprawne.');
+        return;
+      }
+
+      usersList[userIndex].password = hashPassword(profileNewPassword);
+      isPasswordChanged = true;
+    }
+
+    // Update name
+    usersList[userIndex].fullName = name;
+    localStorage.setItem('registered_users', JSON.stringify(usersList));
+
+    // Update active session metadata
+    const updatedSession = {
+      ...currentUser,
+      fullName: name,
+    };
+    setCurrentUser(updatedSession);
+    localStorage.setItem('logged_in_user', JSON.stringify(updatedSession));
+
+    setProfileSuccess(
+      isPasswordChanged 
+        ? 'Profil oraz hasło zostały zaktualizowane pomyślnie!' 
+        : 'Profil został zaktualizowany pomyślnie!'
+    );
+
+    // Clear password fields
+    setProfileCurrentPassword('');
+    setProfileNewPassword('');
+    setProfileConfirmPassword('');
+
+    setTimeout(() => {
+      setIsProfileSettingsOpen(false);
+      setProfileSuccess('');
+    }, 1500);
+  };
+
+  const handleGenerateProfileRegCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'NAUCZYCIEL-';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const currentList: any[] = JSON.parse(localStorage.getItem('teacher_registration_codes') || '[]');
+    const now = Date.now();
+    
+    // Clean up expired ones on the fly
+    const activeAndNotExpired = currentList.filter((item: any) => {
+      if (typeof item === 'string') return true; // fallback
+      return item.expiresAt > now;
+    });
+
+    if (!activeAndNotExpired.some((item: any) => (typeof item === 'string' ? item : item.code) === code)) {
+      const newCodeObj = {
+        code,
+        expiresAt: now + 10 * 60 * 1000, // 10 minutes from now
+      };
+      const updated = [newCodeObj, ...activeAndNotExpired];
+      localStorage.setItem('teacher_registration_codes', JSON.stringify(updated));
+      setProfileRegCodes(updated);
+    }
+  };
+
+  const handleDeleteProfileRegCode = (code: string) => {
+    const currentList: any[] = JSON.parse(localStorage.getItem('teacher_registration_codes') || '[]');
+    const updated = currentList.filter((c: any) => {
+      const codeStr = typeof c === 'string' ? c : c.code;
+      return codeStr !== code;
+    });
+    localStorage.setItem('teacher_registration_codes', JSON.stringify(updated));
+    setProfileRegCodes(updated);
   };
 
   // Quick Auto provision demo room helper
@@ -548,8 +776,31 @@ export default function App() {
         onLogout={handleLogout}
         currentView={currentView}
         setView={setCurrentView}
-        theme={theme}
-        setTheme={setTheme}
+        onOpenProfileSettings={() => {
+          setProfileError('');
+          setProfileSuccess('');
+          setProfileCurrentPassword('');
+          setProfileNewPassword('');
+          setProfileConfirmPassword('');
+          setProfileFullName(currentUser?.fullName || '');
+          setProfileActiveTab('profile');
+          const rawCodes = localStorage.getItem('teacher_registration_codes');
+          let parsed: any[] = [];
+          try {
+            parsed = JSON.parse(rawCodes || '[]');
+          } catch (e) {}
+          const now = Date.now();
+          const converted = parsed.map((item: any) => {
+            if (typeof item === 'string') {
+              return { code: item, expiresAt: now + 10 * 60 * 1000 };
+            }
+            return item;
+          });
+          const activeCodes = converted.filter((c: any) => c && c.expiresAt > now);
+          localStorage.setItem('teacher_registration_codes', JSON.stringify(activeCodes));
+          setProfileRegCodes(activeCodes);
+          setIsProfileSettingsOpen(true);
+        }}
       />
 
       {/* Main viewport */}
@@ -569,7 +820,7 @@ export default function App() {
         ) : (
           <AnimatePresence mode="wait">
             {/* VIEW A: Admin/Teacher Panel */}
-            {currentView === 'admin' && currentUser?.role === 'admin' && (
+            {currentView === 'admin' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'teacher') && (
               <motion.div
                 key="admin-panel"
                 initial={{ opacity: 0 }}
@@ -577,6 +828,7 @@ export default function App() {
                 exit={{ opacity: 0 }}
               >
                 <AdminPanel
+                  currentUser={currentUser}
                   quizzes={quizzes}
                   activeRooms={activeRooms}
                   allResults={allResults}
@@ -711,115 +963,13 @@ export default function App() {
                   </form>
                 </div>
 
-                {/* Friendly Test Setup Guides */}
-                <div className="w-full max-w-md bg-[#F7F3E9]/50 border border-[#E5E0D5] rounded-3xl p-6 text-center">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-[#5F7A61] mb-2 font-serif">Wskazówki do testowania dla nauczycieli</h4>
-                  <p className="text-xs text-[#3E3E3E]/85 leading-relaxed mb-4">
-                    Aplikacja posiada pełny, synchroniczny panel nauczyciela do odpalania quizów. Aby ułatwić natychmiastowe sprawdzenie działania, kliknij przycisk szybkiego startu:
-                  </p>
 
-                  <div className="space-y-3">
-                    <button
-                      id="admin-quick-kosm-btn"
-                      onClick={handleAutoProvisionRoom}
-                      className="w-full py-2.5 px-4 bg-[#5F7A61]/10 hover:bg-[#5F7A61]/20 text-[#5F7A61] font-bold text-xs rounded-full flex items-center justify-center gap-1.5 border border-[#5F7A61]/35 active:scale-95 transition-all cursor-pointer"
-                    >
-                      <Play className="w-3 h-3 fill-current" />
-                      <span>Załóż i wejdź do pokoju: „KOSM”</span>
-                    </button>
-
-                    <div className="text-center text-[10px] text-[#8C9B81] font-medium">
-                      Lub zaloguj się jako nauczyciel:<br />
-                      Login: <strong className="text-[#3E3E3E]">nauczyciel@szkola.pl</strong> • Hasło: <strong className="text-[#3E3E3E]">nauczyciel123</strong>
-                    </div>
-                  </div>
-                </div>
               </motion.div>
             )}
           </AnimatePresence>
         )}
       </main>
-               {/* -------------------------------------------------------------
-      {/* -------------------------------------------------------------
-          DASHBOARD SIDE-BY-SIDE CLASSROOM SIMULATOR WIDGET (DEVELOPER PREVIEW)
-          ------------------------------------------------------------- */}
-      {isSimulatorEnabled && !activeStudentRoom && currentUser && (
-        <div className="bg-[#2D3436] border-t border-[#3E3E3E] text-[#F7F3E9] py-5 px-6 shadow-md">
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span className="flex h-2.5 w-2.5 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#8C9B81] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#8C9B81]"></span>
-              </span>
-              <div>
-                <h4 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2 font-mono">
-                  <Server className="w-4 h-4 text-[#8C9B81]" />
-                  Symulator czasu rzeczywistego (Rozgrywka szkolna)
-                </h4>
-                <p className="text-[10px] text-[#E5E0D5] mt-0.5 max-w-xl">
-                  Uruchamiaj i kontroluj stan quizów bez logowania. Tutaj wyświetlają się aktywne klasy. Aby przetestować mechanikę wielu urządzeń, otwórz drugą kartę obok!
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Quick links to active quizzes */}
-              {activeRooms.map((room) => {
-                const isWaiting = room.status === 'waiting';
-                const isProgress = room.status === 'in_progress';
-                const finishedCount = allResults.filter((r) => r.roomCode === room.code).length;
-
-                return (
-                  <div key={room.code} className="bg-[#1D2122] border border-[#3E3E3E] rounded-lg p-2.5 flex items-center gap-3 text-xs">
-                    <div>
-                      <p className="font-mono font-bold text-[#8C9B81]">{room.code}</p>
-                      <p className="text-[9px] text-[#E5E0D5] truncate max-w-[110px]">{room.quizTitle}</p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {isWaiting && (
-                        <button
-                          onClick={() => handleStartRoom(room.code)}
-                          className="bg-[#5F7A61] hover:bg-[#4D634F] text-white font-bold text-[10px] px-2.5 py-1 rounded-full transition-colors cursor-pointer"
-                        >
-                          START
-                        </button>
-                      )}
-                      {isProgress && (
-                        <>
-                          <span className="bg-[#5F7A61]/25 text-[#A1B296] font-bold text-[9px] px-2 py-0.5 rounded-full border border-[#5F7A61]/40 animate-pulse">
-                            W grze!
-                          </span>
-                          <button
-                            onClick={() => {
-                              if (window.confirm(`Czy na pewno chcesz zakończyć quiz dla pokoju ${room.code}?`)) {
-                                handleEndRoom(room.code);
-                              }
-                            }}
-                            className="bg-pink-600 hover:bg-pink-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-full transition-colors cursor-pointer"
-                          >
-                            KONIEC
-                          </button>
-                        </>
-                      )}
-                      <span className="text-[9px] text-[#8C9B81] font-mono">
-                        ({finishedCount}/{room.joinedPlayers.length} ukończyło)
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-
-              <button
-                onClick={() => setIsSimulatorEnabled(false)}
-                className="text-[#8C9B81] hover:text-white text-[11px] font-semibold underline ml-2 cursor-pointer"
-              >
-                Ukryj pasek symulatora
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+         
 
       {/* Footer copyright */}
       <footer className="border-t border-[#E5E0D5] bg-[#F7F3E9] py-6 text-center text-xs text-[#8C9B81] font-medium">
@@ -858,12 +1008,12 @@ export default function App() {
 
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[#8C9B81] mb-1.5">Adres E-mail</label>
+                <label className="block text-xs font-bold text-[#8C9B81] mb-1.5">Nazwa użytkownika lub E-mail</label>
                 <input
                   id="login-email"
                   required
-                  type="email"
-                  placeholder="np. nauczyciel@szkola.pl"
+                  type="text"
+                  placeholder="np. supernauczyciel@szkola.pl"
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#F7F3E9]/80 border border-[#E5E0D5] rounded-xl text-sm text-[#2D3436] focus:outline-none focus:bg-white focus:border-[#5F7A61]"
@@ -876,7 +1026,7 @@ export default function App() {
                   id="login-password"
                   required
                   type="password"
-                  placeholder="np. nauczyciel123"
+                  placeholder="np. LubieUczyc12"
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#F7F3E9]/80 border border-[#E5E0D5] rounded-xl text-sm text-[#2D3436] focus:outline-none focus:bg-white focus:border-[#5F7A61]"
@@ -893,30 +1043,7 @@ export default function App() {
             </form>
 
             <div className="mt-5 pt-4 border-t border-[#E5E0D5]">
-              <span className="block text-center text-[10px] font-bold text-[#8C9B81] uppercase tracking-wider mb-2">Szybkie autouzupełnianie:</span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthEmail('nauczyciel@szkola.pl');
-                    setAuthPassword('nauczyciel123');
-                  }}
-                  className="p-2 border border-[#5F7A61]/35 hover:bg-[#5F7A61]/5 rounded-xl text-[11px] font-bold text-[#5F7A61] transition-all cursor-pointer text-center active:scale-95"
-                >
-                  Nauczyciel/Host
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthEmail('uczen@szkola.pl');
-                    setAuthPassword('uczen123');
-                  }}
-                  className="p-2 border border-[#8C9B81]/35 hover:bg-[#8C9B81]/5 rounded-xl text-[11px] font-bold text-slate-700 transition-all cursor-pointer text-center active:scale-95"
-                >
-                  Uczeń (Logowanie)
-                </button>
-              </div>
-              <p className="text-[10px] text-[#8C9B81] text-center mt-3 leading-relaxed">
+              <p className="text-[10px] text-[#8C9B81] text-center leading-relaxed">
                 Rejestracja kont jest dostępna wyłącznie dla Nauczyciela. Uczniowie mogą logować się (bez rejestracji samodzielnej) na przypisane im konta, aby śledzić osobiste wyniki historyczne.
               </p>
             </div>
@@ -961,7 +1088,7 @@ export default function App() {
             )}
 
             <form onSubmit={handleRegisterSubmit} className="space-y-2.5">
-              <input type="hidden" name="role" value="admin" />
+              <input type="hidden" name="role" value="teacher" />
 
               <div>
                 <label className="block text-[10px] font-black text-[#8C9B81] mb-1 uppercase tracking-wider">Pełne Imię i Nazwisko</label>
@@ -1055,6 +1182,285 @@ export default function App() {
               onClick={() => setIsRegisterOpen(false)}
               className="absolute top-4 right-4 p-1.5 text-[#8C9B81] hover:text-[#2D3436] hover:bg-[#F7F3E9] rounded-xl transition-all cursor-pointer"
               title="Zamknij (Wyjdź)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        </div>
+      )}
+
+      {/* -------------------------------------------------------------
+          MODAL: PROFILE SETTINGS POPUP OVERLAY
+          ------------------------------------------------------------- */}
+      {isProfileSettingsOpen && currentUser && (
+        <div 
+          onClick={() => {
+            setIsProfileSettingsOpen(false);
+            setProfileCurrentPassword('');
+            setProfileNewPassword('');
+            setProfileConfirmPassword('');
+            setProfileError('');
+            setProfileSuccess('');
+          }}
+          className="fixed inset-0 bg-[#2D3436]/70 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#FDFBF7] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#E5E0D5] shadow-2xl relative cursor-default max-h-[90vh] overflow-y-auto"
+          >
+            <h3 className="text-xl font-bold font-serif text-[#2D3436] mb-1 flex items-center gap-2">
+              <Settings className="w-5 h-5 text-[#5F7A61]" /> Profil i Ustawienia
+            </h3>
+            <p className="text-[#8C9B81] text-xs mb-4 font-medium">
+              Zarządzaj swoimi preferencjami, hasełkami i kodami dostępu.
+            </p>
+
+            {/* If user is admin or teacher, allow switching sub-tabs in settings */}
+            {(currentUser.role === 'admin' || currentUser.role === 'teacher') && (
+              <div className="flex border-b border-[#E5E0D5] mb-5">
+                <button
+                  type="button"
+                  onClick={() => setProfileActiveTab('profile')}
+                  className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                    profileActiveTab === 'profile'
+                      ? 'border-[#5F7A61] text-[#2D3436]'
+                      : 'border-transparent text-[#8C9B81] hover:text-[#2D3436]'
+                  }`}
+                >
+                  Mój Profil & Motyw
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProfileActiveTab('codes')}
+                  className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                    profileActiveTab === 'codes'
+                      ? 'border-[#5F7A61] text-[#2D3436]'
+                      : 'border-transparent text-[#8C9B81] hover:text-[#2D3436]'
+                  }`}
+                >
+                  Kody Rejestracji
+                </button>
+              </div>
+            )}
+
+            {profileError && (
+              <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 rounded-2xl text-xs mb-4 font-semibold">
+                {profileError}
+              </div>
+            )}
+
+            {profileSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-2xl text-xs mb-4 font-semibold">
+                {profileSuccess}
+              </div>
+            )}
+
+            {/* TAB 1: PROFILE EDIT */}
+            {profileActiveTab === 'profile' && (
+              <form onSubmit={handleProfileSettingsSubmit} className="space-y-4">
+                {/* Informacje o profilu */}
+                <div className="bg-[#F7F3E9] p-3.5 rounded-2xl text-xs">
+                  <div className="text-[#8C9B81] font-bold uppercase tracking-wider text-[10px]">Zalogowany jako</div>
+                  <div className="text-[#2D3436] font-bold mt-1 text-sm">{currentUser.fullName}</div>
+                  <div className="text-[#8C9B81] font-medium font-mono text-[11px] mt-0.5">{currentUser.email}</div>
+                  <div className="mt-2 text-[10px] font-bold text-[#5F7A61] uppercase tracking-wider inline-block bg-[#5F7A61]/10 px-2.5 py-1 rounded-full">
+                    Rola: {currentUser.role === 'admin' ? 'Administrator' : currentUser.role === 'teacher' ? 'Nauczyciel' : 'Uczeń'}
+                  </div>
+                </div>
+
+                {/* Zmiana nazwy */}
+                <div>
+                  <label className="block text-[11px] font-bold text-[#8C9B81] mb-1">Nazwa użytkownika (Imię i Nazwisko)</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Wpisz imię i nazwisko"
+                    value={profileFullName}
+                    onChange={(e) => setProfileFullName(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#F7F3E9]/80 border border-[#E5E0D5] rounded-xl text-xs sm:text-sm text-[#2D3436] focus:outline-none focus:bg-white focus:border-[#5F7A61] font-medium"
+                  />
+                </div>
+
+                {/* Zmiana hasła (opcjonalnie) */}
+                <div className="border-t border-[#E5E0D5]/60 pt-3">
+                  <h4 className="text-[11px] font-extrabold text-[#2D3436]/80 uppercase tracking-widest mb-2.5">Zmień hasło (opcjonalnie)</h4>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#8C9B81] mb-1">Obecne hasło</label>
+                      <input
+                        type="password"
+                        placeholder="Wpisz dotychczasowe hasło"
+                        value={profileCurrentPassword}
+                        onChange={(e) => setProfileCurrentPassword(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#F7F3E9]/80 border border-[#E5E0D5] rounded-xl text-xs sm:text-sm text-[#2D3436] focus:outline-none focus:bg-white focus:border-[#5F7A61]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#8C9B81] mb-1">Nowe hasło</label>
+                      <input
+                        type="password"
+                        placeholder="Min. 8 znaków, A-Z, a-z, 0-9"
+                        value={profileNewPassword}
+                        onChange={(e) => setProfileNewPassword(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#F7F3E9]/80 border border-[#E5E0D5] rounded-xl text-xs sm:text-sm text-[#2D3436] focus:outline-none focus:bg-white focus:border-[#5F7A61]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#8C9B81] mb-1">Potwierdź nowe hasło</label>
+                      <input
+                        type="password"
+                        placeholder="Wpisz nowe hasło ponownie"
+                        value={profileConfirmPassword}
+                        onChange={(e) => setProfileConfirmPassword(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#F7F3E9]/80 border border-[#E5E0D5] rounded-xl text-xs sm:text-sm text-[#2D3436] focus:outline-none focus:bg-white focus:border-[#5F7A61]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Zmiana motywu */}
+                <div className="border-t border-[#E5E0D5]/60 pt-3">
+                  <label className="block text-[11px] font-bold text-[#8C9B81] dark:!text-slate-400 mb-1.5 uppercase tracking-wider">Preferowany Motyw</label>
+                  <div className="grid grid-cols-2 gap-1 bg-[#F7F3E9]/70 rounded-xl p-1 border border-[#E5E0D5]">
+                    <button
+                      type="button"
+                      onClick={() => setTheme('light')}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        theme === 'light'
+                          ? 'bg-[#5F7A61] text-white shadow-xs font-black'
+                          : 'text-[#8C9B81] dark:!text-slate-500 hover:text-[#2D3436]'
+                      }`}
+                    >
+                      <Sun className="w-3 h-3" />
+                      <span>Jasny</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTheme('dark')}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        theme === 'dark'
+                          ? 'bg-[#5F7A61] text-white shadow-xs font-black'
+                          : 'text-[#8C9B81] dark:!text-slate-500 hover:text-[#2D3436]'
+                      }`}
+                    >
+                      <Moon className="w-3 h-3" />
+                      <span>Ciemny</span>
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-slate-500 dark:!text-slate-400 block mt-1.5 leading-relaxed">
+                    Domyślnie aplikacja dopasowuje się automatycznie do motywu Twojego systemu operacyjnego.
+                  </span>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2.5 pt-2 border-t border-[#E5E0D5]/60">
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileSettingsOpen(false)}
+                    className="w-1/3 py-2.5 border border-[#E5E0D5] text-[#8C9B81] hover:text-[#2D3436] hover:bg-[#F7F3E9] rounded-full font-bold text-xs transition-all cursor-pointer text-center"
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="submit"
+                    className="w-2/3 py-2.5 bg-[#5F7A61] hover:bg-[#4D634F] text-white rounded-full font-bold text-xs transition-all cursor-pointer shadow-sm shadow-[#5F7A61]/10 text-center"
+                  >
+                    Zapisz zmiany
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB 2: KEY GENERATION */}
+            {profileActiveTab === 'codes' && (currentUser.role === 'admin' || currentUser.role === 'teacher') && (
+              <div className="space-y-4">
+                <div className="bg-[#F7F3E9] p-3 border border-[#E5E0D5] rounded-2xl">
+                  <h4 className="text-xs font-extrabold text-[#2D3436] flex items-center gap-1.5 uppercase tracking-wider">
+                    <UserCheck className="w-4 h-4 text-[#5F7A61]" /> Klucze dla Nauczycieli
+                  </h4>
+                  <p className="text-[#8C9B81] text-[11px] font-medium mt-1 leading-relaxed">
+                    Każdy wygenerowany kod umożliwia jednorazową i bezpieczną rejestrację nowego konta nauczycielskiego w systemie.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGenerateProfileRegCode}
+                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-[0.98]"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Wygeneruj nowy kod</span>
+                </button>
+
+                <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
+                  {profileRegCodes.length === 0 ? (
+                    <div className="border border-dashed border-[#E5E0D5] p-6 rounded-2xl text-center text-[#8C9B81] text-xs font-semibold bg-[#F7F3E9]/25 italic">
+                      Brak aktywnych kodów rejestracji. Kliknij przycisk powyżej, by wygenerować unikalny klucz zaproszenia.
+                    </div>
+                  ) : (
+                    profileRegCodes.map((item) => {
+                      const codeStr = typeof item === 'string' ? item : item.code;
+                      const expiresAt = typeof item === 'string' ? null : item.expiresAt;
+                      
+                      let timeLeftStr = 'Bezterminowy';
+                      if (expiresAt) {
+                        const timeLeft = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+                        const m = Math.floor(timeLeft / 60);
+                        const s = timeLeft % 60;
+                        timeLeftStr = timeLeft > 0 ? `Wygasa za: ${m}m ${s}s` : 'Wygasł';
+                      }
+
+                      return (
+                        <div key={codeStr} className="flex items-center justify-between p-2.5 bg-[#F7F3E9]/50 border border-[#E5E0D5] rounded-xl hover:shadow-2xs transition-all">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-xs font-black font-mono text-[#2D3436] tracking-wider bg-white px-2 py-0.5 rounded border border-[#E5E0D5] shadow-3xs self-start">{codeStr}</span>
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              {timeLeftStr}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProfileRegCode(codeStr)}
+                            className="p-1 px-1.5 hover:bg-rose-50 text-rose-500 rounded-lg transition-all cursor-pointer"
+                            title="Usuń ten kod"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="flex pt-3 border-t border-[#E5E0D5]/60 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileSettingsOpen(false)}
+                    className="py-2.5 px-6 bg-[#5F7A61] hover:bg-[#4D634F] text-white rounded-full font-bold text-xs transition-all cursor-pointer shadow-sm text-center"
+                  >
+                    Gotowe
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <button
+              id="profile-modal-close"
+              onClick={() => {
+                setIsProfileSettingsOpen(false);
+                setProfileCurrentPassword('');
+                setProfileNewPassword('');
+                setProfileConfirmPassword('');
+                setProfileError('');
+                setProfileSuccess('');
+              }}
+              className="absolute top-4 right-4 p-1.5 text-[#8C9B81] hover:text-[#2D3436] hover:bg-[#F7F3E9] rounded-xl transition-all cursor-pointer"
+              title="Zamknij"
             >
               <X className="w-4 h-4" />
             </button>

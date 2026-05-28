@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ActiveRoom, Player, PlayerResult, Question, Quiz, getQuestionMaxPoints, calculateQuestionScore } from '../types';
+import { ActiveRoom, Player, PlayerResult, Question, Quiz, User, getQuestionMaxPoints, calculateQuestionScore } from '../types';
 import { 
   Plus, Play, Trophy, Users, CheckCircle, Download, Trash2, 
   Settings, Clock, Sparkles, BookOpen, AlertCircle, RefreshCw, ChevronRight, FileSpreadsheet, PlusCircle,
-  Edit, BarChart2, UserCheck, ChevronDown, CheckCircle2, XCircle, UserPlus, Info, X
+  Edit, BarChart2, UserCheck, ChevronDown, CheckCircle2, XCircle, UserPlus, Info, X, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hashPassword } from '../utils/hash';
@@ -12,6 +12,7 @@ interface AdminPanelProps {
   quizzes: Quiz[];
   activeRooms: ActiveRoom[];
   allResults: PlayerResult[];
+  currentUser?: User | null;
   onAddNewQuiz: (quiz: Quiz) => void;
   onEditQuiz: (quiz: Quiz) => void;
   onDeleteQuiz: (quizId: string) => void;
@@ -25,6 +26,7 @@ export default function AdminPanel({
   quizzes,
   activeRooms,
   allResults,
+  currentUser,
   onAddNewQuiz,
   onEditQuiz,
   onDeleteQuiz,
@@ -78,48 +80,27 @@ export default function AdminPanel({
   // Auxiliary States for Advanced Admin Panel features
   const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
-  const [registrationCodes, setRegistrationCodes] = useState<string[]>([]);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newUserFullName, setNewUserFullName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
-  const [newUserRole, setNewUserRole] = useState<'admin' | 'student'>('student');
+  const [newUserRole, setNewUserRole] = useState<'admin' | 'teacher' | 'student'>('teacher');
   const [addUserError, setAddUserError] = useState('');
+  const [usersError, setUsersError] = useState('');
   const [selectedResultForAnalysis, setSelectedResultForAnalysis] = useState<PlayerResult | null>(null);
   const [roomCodeToConfirmEnd, setRoomCodeToConfirmEnd] = useState<string | null>(null);
   const [questionIdToConfirmDelete, setQuestionIdToConfirmDelete] = useState<string | null>(null);
   const [deleteConfirmQuizId, setDeleteConfirmQuizId] = useState<string | null>(null);
   const [deleteConfirmUserId, setDeleteConfirmUserId] = useState<string | null>(null);
+  const [editingPasswordUserId, setEditingPasswordUserId] = useState<string | null>(null);
+  const [tempNewPassword, setTempNewPassword] = useState('');
+  const [tempRepeatPassword, setTempRepeatPassword] = useState('');
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
 
   const loadRegisteredUsers = () => {
     const list = JSON.parse(localStorage.getItem('registered_users') || '[]');
     setRegisteredUsers(list);
-  };
-
-  const loadRegistrationCodes = () => {
-    const list = JSON.parse(localStorage.getItem('teacher_registration_codes') || '[]');
-    setRegistrationCodes(list);
-  };
-
-  const handleGenerateRegistrationCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = 'NAUCZYCIEL-';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    const currentList = JSON.parse(localStorage.getItem('teacher_registration_codes') || '[]');
-    if (!currentList.includes(code)) {
-      const updated = [code, ...currentList];
-      localStorage.setItem('teacher_registration_codes', JSON.stringify(updated));
-      loadRegistrationCodes();
-    }
-  };
-
-  const handleDeleteRegistrationCode = (code: string) => {
-    const currentList = JSON.parse(localStorage.getItem('teacher_registration_codes') || '[]');
-    const updated = currentList.filter((c: string) => c !== code);
-    localStorage.setItem('teacher_registration_codes', JSON.stringify(updated));
-    loadRegistrationCodes();
   };
 
   const handleAddUserSubmit = (e: React.FormEvent) => {
@@ -159,22 +140,82 @@ export default function AdminPanel({
     setNewUserFullName('');
     setNewUserEmail('');
     setNewUserPassword('');
-    setNewUserRole('student');
+    setNewUserRole('teacher');
     setIsAddingUser(false);
   };
 
   const handleDeleteUser = (userId: string) => {
+    setUsersError('');
+    if (currentUser?.role !== 'admin') {
+      setUsersError('Błąd uprawnień: Tylko Administrator może usuwać konta użytkowników.');
+      setDeleteConfirmUserId(null);
+      return;
+    }
+    if (userId === currentUser?.id) {
+      setUsersError('Bezpieczeństwo: Nie możesz usunąć konta, na które jesteś obecnie zalogowany!');
+      setDeleteConfirmUserId(null);
+      return;
+    }
     const currentUsers: any[] = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    const targetUser = currentUsers.find(u => u.id === userId);
+    if (targetUser?.role === 'admin') {
+      setUsersError('Bezpieczeństwo: Konta z rolą Administratora nie mogą zostać usunięte z żadnego poziomu.');
+      setDeleteConfirmUserId(null);
+      return;
+    }
+
     const updated = currentUsers.filter(u => u.id !== userId);
     localStorage.setItem('registered_users', JSON.stringify(updated));
     loadRegisteredUsers();
     setDeleteConfirmUserId(null);
   };
 
+  const handleChangeUserPassword = (userId: string, targetPassword: string) => {
+    setUsersError('');
+    setChangePasswordError('');
+    setChangePasswordSuccess('');
+
+    if (currentUser?.role !== 'admin') {
+      setUsersError('Błąd uprawnień: Tylko Administrator może zmieniać hasła innych użytkowników.');
+      return;
+    }
+
+    const pwd = targetPassword.trim();
+    if (pwd.length < 8 || !/[A-Z]/.test(pwd) || !/[a-z]/.test(pwd) || !/[0-9]/.test(pwd)) {
+      setChangePasswordError('Hasło musi mieć co najmniej 8 znaków, zawierać małe i duże litery oraz co najmniej jedną cyfrę.');
+      return;
+    }
+
+    const currentUsers: any[] = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    const userIndex = currentUsers.findIndex(u => u.id === userId);
+    if (userIndex === -1) {
+      setChangePasswordError('Nie znaleziono użytkownika.');
+      return;
+    }
+
+    currentUsers[userIndex].password = hashPassword(pwd);
+    localStorage.setItem('registered_users', JSON.stringify(currentUsers));
+    loadRegisteredUsers();
+
+    setChangePasswordSuccess('Hasło użytkownika zostało pomyślnie zmienione!');
+    setTimeout(() => {
+      setEditingPasswordUserId(null);
+      setTempNewPassword('');
+      setTempRepeatPassword('');
+      setChangePasswordSuccess('');
+      setChangePasswordError('');
+    }, 1500);
+  };
+
   useEffect(() => {
     loadRegisteredUsers();
-    loadRegistrationCodes();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (currentUser?.role === 'teacher' && activeTab === 'users') {
+      setActiveTab('rooms');
+    }
+  }, [currentUser, activeTab]);
 
   // Auto-fill launch options when quiz is selected
   useEffect(() => {
@@ -413,18 +454,20 @@ export default function AdminPanel({
           <span>Baza Wyników ({allResults.length})</span>
         </button>
 
-        <button
-          id="tab-users-btn"
-          onClick={() => setActiveTab('users')}
-          className={`pb-3 px-4 font-semibold text-sm border-b-2 whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'users'
-              ? 'border-[#5F7A61] text-[#5F7A61]'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Użytkownicy ({registeredUsers.length})</span>
-        </button>
+        {currentUser?.role === 'admin' && (
+          <button
+            id="tab-users-btn"
+            onClick={() => setActiveTab('users')}
+            className={`pb-3 px-4 font-semibold text-sm border-b-2 whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'users'
+                ? 'border-[#5F7A61] text-[#5F7A61]'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Użytkownicy ({registeredUsers.length})</span>
+          </button>
+        )}
       </div>
 
       {/* TAB 1: LIVE ACTIVE ROOMS & GENERATING ONE */}
@@ -459,13 +502,6 @@ export default function AdminPanel({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Kod dostępu studenta (Game Code)</label>
-                  <button
-                    type="button"
-                    onClick={() => setCustomLaunchCode(generateRandomCode())}
-                    className="text-[10px] text-pink-500 hover:text-pink-600 font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                  >
-                    <Sparkles className="w-3 h-3" /> Generuj nowy
-                  </button>
                 </div>
                 <div className="relative">
                   <input
@@ -475,7 +511,7 @@ export default function AdminPanel({
                     required
                     value={customLaunchCode}
                     onChange={(e) => setCustomLaunchCode(e.target.value.toUpperCase().replace(/[^a-zA-Z0-9]/g, ''))}
-                    className="w-full pl-4 pr-16 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:border-[#5F7A61] focus:ring-4 focus:ring-[#5F7A61]/10 transition-all text-slate-850 placeholder:text-slate-400 placeholder:font-normal"
+                    className="w-full pl-4 pr-32 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:border-[#5F7A61] focus:ring-4 focus:ring-[#5F7A61]/10 transition-all text-slate-850 placeholder:text-slate-400 placeholder:font-normal"
                   />
                   <button
                     type="button"
@@ -483,7 +519,7 @@ export default function AdminPanel({
                     className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-pink-50 hover:bg-pink-100 text-[#EC4899] text-[10px] rounded-lg font-bold transition-all border border-pink-100 active:scale-95 cursor-pointer flex items-center gap-1"
                   >
                     <Sparkles className="w-2.5 h-2.5" />
-                    <span>Losuj</span>
+                    <span>Generuj nowy</span>
                   </button>
                 </div>
                 <span className="text-[10px] text-slate-400 block mt-1">Uczniowie wpiszą dokładnie ten kod na stronie startowej.</span>
@@ -1403,12 +1439,19 @@ export default function AdminPanel({
       )}
 
       {/* TAB 4: REGISTERED USERS MANAGEMENT */}
-      {activeTab === 'users' && (
+      {activeTab === 'users' && currentUser?.role === 'admin' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" id="admin-users-view">
+          {usersError && (
+            <div className="mb-4 bg-rose-50 text-rose-700 text-xs px-3 py-2.5 rounded-xl font-bold flex items-center gap-2 border border-rose-200">
+              <AlertCircle className="w-4.5 h-4.5 text-rose-600 animate-pulse" />
+              <span>{usersError}</span>
+            </div>
+          )}
+
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
             <div>
               <h3 className="text-base font-extrabold text-slate-800">Zarejestrowani Użytkownicy aplikacji</h3>
-              <p className="text-slate-400 text-xs mt-0.5">Zarządzaj kontami uczniów i nauczycieli zapisanymi w lokalnej bazie danych.</p>
+              <p className="text-slate-400 text-xs mt-0.5">Zarządzaj kontami uczniów, nauczycieli i administratorów zapisanymi w lokalnej bazie danych.</p>
             </div>
 
             <button
@@ -1422,216 +1465,299 @@ export default function AdminPanel({
 
           <AnimatePresence mode="wait">
             {isAddingUser ? (
-              <motion.div
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                className="bg-slate-50 border border-slate-200 p-5 sm:p-6 rounded-2xl max-w-xl"
-              >
-                <h4 className="text-sm font-extrabold text-slate-800 mb-4 flex items-center gap-1.5 border-b border-slate-200/60 pb-2">
-                  <UserPlus className="w-4 h-4 text-[#5F7A61]" /> Formularz zakładania konta
-                </h4>
-                {addUserError && (
-                  <div className="mb-4 bg-rose-50 text-rose-700 text-xs px-3 py-2 rounded-lg font-semibold flex items-center gap-1.5 border border-rose-100">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>{addUserError}</span>
+                  <motion.div
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    className="bg-slate-50 border border-slate-200 p-5 sm:p-6 rounded-2xl max-w-xl"
+                  >
+                    <h4 className="text-sm font-extrabold text-slate-800 mb-4 flex items-center gap-1.5 border-b border-slate-200/60 pb-2">
+                      <UserPlus className="w-4 h-4 text-[#5F7A61]" /> Formularz zakładania konta
+                    </h4>
+                    {addUserError && (
+                      <div className="mb-4 bg-rose-50 text-rose-700 text-xs px-3 py-2 rounded-lg font-semibold flex items-center gap-1.5 border border-rose-100">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>{addUserError}</span>
+                      </div>
+                    )}
+                    <form onSubmit={handleAddUserSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Imię i Nazwisko / Nazwa</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="np. Anna Kowalska"
+                          value={newUserFullName}
+                          onChange={(e) => setNewUserFullName(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:border-[#5F7A61]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">E-mail (login użytkownika)</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="np. ania@szkola.pl"
+                          value={newUserEmail}
+                          onChange={(e) => setNewUserEmail(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:border-[#5F7A61]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Hasło (min. 8 znaków, A-Z, a-z, 0-9)</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Min. 8 znaków, mała/wielka litera, cyfra"
+                          value={newUserPassword}
+                          onChange={(e) => setNewUserPassword(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold font-mono focus:outline-none focus:border-[#5F7A61]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Rola w systemie</label>
+                        <select
+                          value={newUserRole}
+                          onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'teacher' | 'student')}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 cursor-pointer"
+                        >
+                          <option value="teacher">Nauczyciel (Prowadzenie zajęć, kody, quizy)</option>
+                          <option value="admin">Administrator (Zarządzanie kontami użytkowników)</option>
+                          <option value="student">Student / Uczeń (Tylko rozwiązywanie quizów)</option>
+                        </select>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingUser(false)}
+                          className="py-2 px-3 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-all cursor-pointer"
+                        >
+                          Anuluj
+                        </button>
+                        <button
+                          type="submit"
+                          className="py-2.5 px-4 bg-[#5F7A61] hover:bg-[#4E644F] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        >
+                          Utwórz i zachowaj konto
+                        </button>
+                      </div>
+                    </form>
+                  </motion.div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="min-w-full divide-y divide-slate-150 text-left text-xs text-slate-600 font-semibold">
+                      <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                        <tr>
+                          <th className="px-4 py-3.5">Użytkownik</th>
+                          <th className="px-4 py-3.5">Rola</th>
+                          <th className="px-4 py-3.5">E-mail (login)</th>
+                          <th className="px-4 py-3.5">Hasło</th>
+                          <th className="px-4 py-3.5 text-right">Zarządzanie</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {registeredUsers.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="text-center py-10 text-slate-400 italic">Brak zarejestrowanych osób. Kliknij przycisk powyżej, by utworzyć konto.</td>
+                          </tr>
+                        ) : (
+                          registeredUsers.map((u) => {
+                            const isUAdmin = u.role === 'admin';
+                            const isUTeacher = u.role === 'teacher';
+                            return (
+                              <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="px-4 py-3 text-slate-900 dark:text-slate-100 font-bold flex items-center gap-2">
+                                  <span className={`w-2 h-2 rounded-full ${isUAdmin ? 'bg-rose-500 animate-pulse' : isUTeacher ? 'bg-[#5F7A61]' : 'bg-emerald-500'}`} />
+                                  <span>{u.fullName} {u.id === currentUser?.id ? ' (Ty)' : ''}</span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    isUAdmin 
+                                      ? 'bg-rose-50 text-rose-700 border border-rose-150' 
+                                      : isUTeacher
+                                      ? 'bg-emerald-50 text-emerald-950 font-black border border-[#5F7A61]/25'
+                                      : 'bg-blue-50 text-blue-700 border border-blue-150'
+                                  }`}>
+                                    {isUAdmin ? 'Administrator' : isUTeacher ? 'Nauczyciel' : 'Uczeń'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600 dark:text-slate-200 font-medium font-mono">
+                                  {u.email}
+                                </td>
+                                <td className="px-4 py-3 text-slate-400 dark:text-slate-300 font-mono text-xs">
+                                  <span className="flex items-center gap-1.5" title="Hasło zapisane w bazie jako bezpieczny skrót SHA-256">
+                                    <span className="text-slate-300 select-none font-sans font-bold">••••••••</span>
+                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded-md font-sans font-bold">{u.password ? 'SHA-256' : 'brak'}</span>
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right flex items-center justify-end gap-2 flex-wrap">
+                                  {currentUser?.role === 'admin' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingPasswordUserId(u.id);
+                                        setTempNewPassword('');
+                                        setChangePasswordError('');
+                                        setChangePasswordSuccess('');
+                                      }}
+                                      className="p-1 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1 border border-slate-200 hover:border-[#5F7A61]/30 hover:bg-[#5F7A61]/5 text-[#5F7A61]"
+                                      title="Resetuj lub zmień hasło dla tego użytkownika"
+                                    >
+                                      <Lock className="w-3 h-3" />
+                                      <span>Hasło</span>
+                                    </button>
+                                  )}
+
+                                  {deleteConfirmUserId === u.id ? (
+                                    <div id={`user-del-confirm-${u.id}`} className="inline-flex items-center gap-1.5 bg-pink-50 border border-pink-200 rounded-lg p-1 animate-pulse justify-end">
+                                      <span className="text-[10px] font-black text-pink-700 px-1">Na pewno?</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteUser(u.id)}
+                                        className="text-white bg-pink-600 hover:bg-pink-700 rounded px-2 py-0.5 text-[10px] font-black cursor-pointer shadow-xs active:scale-95 transition-all delete-btn-custom"
+                                      >
+                                        Tak
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeleteConfirmUserId(null)}
+                                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded px-2 py-0.5 text-[10px] font-bold cursor-pointer active:scale-95 transition-all"
+                                      >
+                                        Nie
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmUserId(u.id)}
+                                      disabled={isUAdmin}
+                                      className={`p-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1 delete-btn-custom ${
+                                        isUAdmin ? 'opacity-35 cursor-not-allowed' : ''
+                                      }`}
+                                      title={isUAdmin ? "Nie można usunąć konta administratora" : "Skasuj to konto użytkownika"}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>Usuń</span>
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 )}
-                <form onSubmit={handleAddUserSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Imię i Nazwisko / Nazwa</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="np. Anna Kowalska"
-                      value={newUserFullName}
-                      onChange={(e) => setNewUserFullName(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:border-[#5F7A61]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">E-mail (login użytkownika)</label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="np. ania@szkola.pl"
-                      value={newUserEmail}
-                      onChange={(e) => setNewUserEmail(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:border-[#5F7A61]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Hasło (min. 8 znaków, A-Z, a-z, 0-9)</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Min. 8 znaków, mała/wielka litera, cyfra"
-                      value={newUserPassword}
-                      onChange={(e) => setNewUserPassword(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold font-mono focus:outline-none focus:border-[#5F7A61]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Rola w systemie</label>
-                    <select
-                      value={newUserRole}
-                      onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'student')}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 cursor-pointer"
-                    >
-                      <option value="student">Student / Uczeń (Dostęp do gier)</option>
-                      <option value="admin">Administrator / Nauczyciel (Panel Prowadzącego)</option>
-                    </select>
-                  </div>
+              </AnimatePresence>
 
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsAddingUser(false)}
-                      className="py-2 px-3 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-all cursor-pointer"
-                    >
-                      Anuluj
-                    </button>
-                    <button
-                      type="submit"
-                      className="py-2.5 px-4 bg-[#5F7A61] hover:bg-[#4E644F] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
-                    >
-                      Utwórz i zachowaj konto
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-slate-100">
-                <table className="min-w-full divide-y divide-slate-150 text-left text-xs text-slate-600 font-semibold">
-                  <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                    <tr>
-                      <th className="px-4 py-3.5">Użytkownik</th>
-                      <th className="px-4 py-3.5">Rola</th>
-                      <th className="px-4 py-3.5">E-mail (login)</th>
-                      <th className="px-4 py-3.5">Hasło</th>
-                      <th className="px-4 py-3.5 text-right">Zarządzanie</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {registeredUsers.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="text-center py-10 text-slate-400 italic">Brak zarejestrowanych osób. Kliknij przycisk powyżej, by utworzyć konto.</td>
-                      </tr>
-                    ) : (
-                      registeredUsers.map((u) => {
-                        const isAdmin = u.role === 'admin';
-                        return (
-                          <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="px-4 py-3 text-slate-900 dark:text-slate-100 font-bold flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${isAdmin ? 'bg-[#5F7A61] animate-pulse' : 'bg-emerald-500'}`} />
-                              <span>{u.fullName}</span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                isAdmin 
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-150 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' 
-                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-150 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                              }`}>
-                                {isAdmin ? 'Nauczyciel' : 'Uczeń'}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-slate-600 dark:text-slate-200 font-medium font-mono">
-                              {u.email}
-                            </td>
-                            <td className="px-4 py-3 text-slate-400 dark:text-slate-300 font-mono text-xs">
-                              <span className="flex items-center gap-1.5" title="Hasło zapisane w bazie jako bezpieczny skrót SHA-256">
-                                <span className="text-slate-300 select-none">••••••••</span>
-                                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded-md font-sans font-bold">SHA-256</span>
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {deleteConfirmUserId === u.id ? (
-                                <div id={`user-del-confirm-${u.id}`} className="inline-flex items-center gap-1.5 bg-pink-50 border border-pink-200 rounded-lg p-1 animate-pulse justify-end">
-                                  <span className="text-[10px] font-black text-pink-700 px-1">Na pewno?</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteUser(u.id)}
-                                    className="text-white rounded px-2 py-0.5 text-[10px] font-black cursor-pointer shadow-xs active:scale-95 transition-all delete-btn-custom"
-                                  >
-                                    Tak
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeleteConfirmUserId(null)}
-                                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded px-2 py-0.5 text-[10px] font-bold cursor-pointer active:scale-95 transition-all"
-                                  >
-                                    Nie
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setDeleteConfirmUserId(u.id)}
-                                  className="p-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1 delete-btn-custom"
-                                  title="Skasuj to konto użytkownika"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                  <span>Usuń</span>
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })
+              {/* Change Password Modal for Admin */}
+              {editingPasswordUserId && (
+                <div 
+                  onClick={() => {
+                    setEditingPasswordUserId(null);
+                    setTempNewPassword('');
+                    setTempRepeatPassword('');
+                    setChangePasswordError('');
+                    setChangePasswordSuccess('');
+                  }}
+                  className="fixed inset-0 bg-[#2D3436]/70 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in"
+                >
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-slate-200 shadow-2xl relative cursor-default text-left"
+                  >
+                    <h3 className="text-base font-extrabold text-slate-800 mb-2 flex items-center gap-2">
+                      <Lock className="w-5 h-5 text-[#5F7A61]" /> Zmień hasło użytkownika
+                    </h3>
+                    <p className="text-slate-400 text-xs mb-4 leading-normal">
+                      Wpisz nowe, bezpieczne hasło logowania dla użytkownika:{' '}
+                      <strong className="text-slate-700">
+                        {registeredUsers.find(u => u.id === editingPasswordUserId)?.fullName || ''}
+                      </strong>
+                    </p>
+
+                    {changePasswordError && (
+                      <div className="mb-4 bg-rose-50 text-rose-700 text-xs px-3 py-2 rounded-xl font-bold border border-rose-100 flex items-center gap-1.5 leading-normal">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+                        <span>{changePasswordError}</span>
+                      </div>
                     )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </AnimatePresence>
 
-          {/* SECURE REGISTER CODES */}
-          <div className="mt-8 pt-6 border-t border-slate-150">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-              <div>
-                <h4 className="text-sm font-black text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
-                  <UserCheck className="w-4 h-4 text-[#5F7A61]" /> Kody rejestracji nowych nauczycieli
-                </h4>
-                <p className="text-slate-500 text-xs mt-0.5">Wygeneruj kody autoryzacyjne wymagane podczas samodzielnego zakładania konta przez innych pedagogów.</p>
-              </div>
+                    {changePasswordSuccess && (
+                      <div className="mb-4 bg-emerald-50 text-emerald-700 text-xs px-3 py-2 rounded-xl font-bold border border-emerald-100 flex items-center gap-1.5 leading-normal">
+                        <CheckCircle className="w-4 h-4 flex-shrink-0 text-emerald-600 animate-bounce" />
+                        <span>{changePasswordSuccess}</span>
+                      </div>
+                    )}
 
-              <button
-                type="button"
-                onClick={handleGenerateRegistrationCode}
-                className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer text-center"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Wygeneruj nowy kod</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {registrationCodes.length === 0 ? (
-                <div className="col-span-full border border-dashed border-slate-200 p-6 rounded-xl text-center text-slate-400 text-xs italic bg-slate-50/50">
-                  Brak aktywnych kodów rejestracji. Kliknij przycisk powyżej, aby wygenerować pierwszy unikalny klucz zaproszenia.
-                </div>
-              ) : (
-                registrationCodes.map((code) => (
-                  <div key={code} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl hover:shadow-xs transition-colors">
-                    <div className="flex flex-col">
-                      <span className="text-xs font-black font-mono text-slate-800 tracking-wider bg-white px-2 py-1 rounded border border-slate-200 shadow-3xs">{code}</span>
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-1">Jednorazowy / Aktywny</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteRegistrationCode(code)}
-                      className="p-1 px-2 rounded-lg text-[10px] font-bold transition-all cursor-pointer delete-btn-custom"
-                      title="Anuluj i usuń ten kod"
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (tempNewPassword !== tempRepeatPassword) {
+                          setChangePasswordError('Podane hasła nie są identyczne!');
+                          return;
+                        }
+                        if (window.confirm('Czy na pewno chcesz zmienić hasło temu użytkownikowi?')) {
+                          handleChangeUserPassword(editingPasswordUserId, tempNewPassword);
+                        }
+                      }}
+                      className="space-y-4"
                     >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Nowe hasło (min. 8 znaków, A-Z, a-z, 0-9)</label>
+                        <input
+                          required
+                          type="text"
+                          placeholder="Zadaj nowe hasło użytkownikowi"
+                          value={tempNewPassword}
+                          onChange={(e) => setTempNewPassword(e.target.value)}
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:border-[#5F7A61] font-mono font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Powtórz nowe hasło</label>
+                        <input
+                          required
+                          type="text"
+                          placeholder="Powtórz zadane hasło"
+                          value={tempRepeatPassword}
+                          onChange={(e) => setTempRepeatPassword(e.target.value)}
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:border-[#5F7A61] font-mono font-bold"
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPasswordUserId(null);
+                            setTempNewPassword('');
+                            setTempRepeatPassword('');
+                            setChangePasswordError('');
+                            setChangePasswordSuccess('');
+                          }}
+                          className="py-2 px-3 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-all cursor-pointer"
+                        >
+                          Anuluj
+                        </button>
+                        <button
+                          type="submit"
+                          className="py-2.5 px-4 bg-[#5F7A61] hover:bg-[#4E644F] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        >
+                          Zapisz nowe hasło
+                        </button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
       {/* ANALYSIS DIALOG MODAL OVERLAY */}
       <AnimatePresence>
