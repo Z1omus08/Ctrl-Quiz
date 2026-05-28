@@ -69,7 +69,7 @@ export default function AdminPanel({
   const [newUserFullName, setNewUserFullName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
-  const [newUserRole, setNewUserRole] = useState<'admin' | 'teacher' | 'student'>('teacher');
+  const [newUserRole, setNewUserRole] = useState<'teacher' | 'student'>('teacher');
   const [addUserError, setAddUserError] = useState('');
   const [usersError, setUsersError] = useState('');
   const [selectedResultForAnalysis, setSelectedResultForAnalysis] = useState<PlayerResult | null>(null);
@@ -167,8 +167,16 @@ export default function AdminPanel({
       if (error) {
         setUsersError('Nie udało się usunąć profilu użytkownika z bazy danych.');
       } else {
+        const list = JSON.parse(localStorage.getItem('registered_users') || '[]');
+        const filtered = list.filter((u: any) => u.id !== userId);
+        localStorage.setItem('registered_users', JSON.stringify(filtered));
         loadRegisteredUsers();
       }
+    } else {
+      const list = JSON.parse(localStorage.getItem('registered_users') || '[]');
+      const filtered = list.filter((u: any) => u.id !== userId);
+      localStorage.setItem('registered_users', JSON.stringify(filtered));
+      loadRegisteredUsers();
     }
     setDeleteConfirmUserId(null);
   };
@@ -620,6 +628,47 @@ export default function AdminPanel({
             <button onClick={() => setIsAddingUser(!isAddingUser)} className="px-4 py-2.5 bg-[#5F7A61] text-white font-bold rounded-xl text-xs hover:bg-[#4E644F] cursor-pointer">Dodaj konto</button>
           </div>
 
+          {isAddingUser && (
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-5 border border-slate-200 bg-slate-50/50 rounded-2xl mb-6">
+              <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-[#5F7A61]" /> Nowe konto użytkownika
+              </h4>
+              <form onSubmit={handleAddUserSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Pełne Imię i Nazwisko</label>
+                  <input required type="text" placeholder="Imię i Nazwisko" value={newUserFullName} onChange={(e) => setNewUserFullName(e.target.value)} className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:border-[#5F7A61] focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">E-mail</label>
+                  <input required type="email" placeholder="email@szkola.pl" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:border-[#5F7A61] focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Hasło</label>
+                  <input required type="password" placeholder="Min. 8 znaków" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:border-[#5F7A61] focus:outline-none" />
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-grow">
+                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Rola</label>
+                    <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as any)} className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:border-[#5F7A61] focus:outline-none cursor-pointer">
+                      <option value="teacher">Nauczyciel</option>
+                      <option value="student">Uczeń</option>
+                    </select>
+                  </div>
+                  <button type="submit" className="px-4 py-2 bg-[#5F7A61] text-white font-bold rounded-xl text-xs hover:bg-[#4D634F] cursor-pointer">Zapisz</button>
+                </div>
+              </form>
+              {addUserError && (
+                <p className="text-rose-600 text-[11px] mt-2 font-semibold">{addUserError}</p>
+              )}
+            </motion.div>
+          )}
+
+          {usersError && (
+            <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 rounded-2xl text-xs mb-4 font-semibold">
+              {usersError}
+            </div>
+          )}
+
           <div className="overflow-x-auto rounded-xl border border-slate-100">
             <table className="min-w-full divide-y text-xs text-slate-600">
               <thead className="bg-slate-50 text-slate-500 font-bold uppercase">
@@ -635,7 +684,11 @@ export default function AdminPanel({
                   <tr key={u.id} className="hover:bg-slate-50/50">
                     <td className="px-4 py-3 font-bold text-slate-900">{u.fullName}</td>
                     <td className="px-4 py-3 font-mono">{u.email}</td>
-                    <td className="px-4 py-3 uppercase font-semibold text-slate-550">{u.role}</td>
+                    <td className="px-4 py-3 uppercase font-bold">
+                      <span className={u.role === 'teacher' ? 'text-emerald-950 font-black tracking-wide border-b border-emerald-950/30' : 'text-slate-400 font-medium'}>
+                        {u.role === 'teacher' ? 'Nauczyciel' : u.role}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => handleDeleteUser(u.id)} disabled={u.role === 'admin'} className="px-2 py-1 border rounded-lg delete-btn-custom cursor-pointer disabled:opacity-30">Usuń</button>
                     </td>

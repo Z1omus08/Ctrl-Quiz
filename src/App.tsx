@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ActiveRoom, Player, PlayerResult, Quiz, User } from './types';
 import { DEFAULT_QUIZZES } from './data';
+import { supabase } from './services/supabaseService';
 import Navbar from './components/Navbar';
 import StudentQuiz from './components/StudentQuiz';
 import AdminPanel from './components/AdminPanel';
@@ -87,159 +88,183 @@ export default function App() {
   });
 
   // -------------------------------------------------------------
-  // INITIALIZATION & DUAL-TAB LOCALSTORAGE SYNCHRONIZATION
+  // INITIALIZATION & SUPABASE SYNCHRONIZATION
   // -------------------------------------------------------------
-  useEffect(() => {
-    // A. Quizzes loading
-    const cachedQuizzes = localStorage.getItem('quizzes_catalog');
-    if (cachedQuizzes) {
-      setQuizzes(JSON.parse(cachedQuizzes));
-    } else {
-      localStorage.setItem('quizzes_catalog', JSON.stringify(DEFAULT_QUIZZES));
-      setQuizzes(DEFAULT_QUIZZES);
-    }
-
-    // B. Active rooms loading
-    const cachedRooms = localStorage.getItem('active_rooms');
-    if (cachedRooms) {
-      setActiveRooms(JSON.parse(cachedRooms));
-    }
-
-    // C. Results logs loading
-    const cachedResults = localStorage.getItem('player_results');
-    if (cachedResults) {
-      setAllResults(JSON.parse(cachedResults));
-    }
-
-    // D. Auto login default helper for easy testing
-    const cachedUser = localStorage.getItem('logged_in_user');
-    if (cachedUser) {
-      setCurrentUser(JSON.parse(cachedUser));
-    }
-
-    // Initialize default users in database (admin and teacher only)
-    const usersList = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    let listChanged = false;
-    // Filter out old default student to make sure we strictly have only admin and teacher by default
-    let updatedUsers = usersList.filter((u: any) => u.email !== 'uczen@szkola.pl');
-    if (updatedUsers.length !== usersList.length) {
-      listChanged = true;
-    }
-
-    const teacherExists = updatedUsers.some((u: any) => u.email === DEFAULT_TEACHER_USER.email);
-    if (!teacherExists) {
-      updatedUsers.push({
-        ...DEFAULT_TEACHER_USER,
-        password: hashPassword('nauczyciel123')
-      });
-      listChanged = true;
-    }
-
-    // Ensure that the only possible admin account has email 'admin' and password 'ProgramDoTw0rz3ni4Qu1zow'
-    // Any other admin account gets converted to 'teacher'
-    let adminFound = false;
-    updatedUsers = updatedUsers.map((u: any) => {
-      if (u.email === 'admin') {
-        adminFound = true;
-        if (u.role !== 'admin' || u.password !== hashPassword('ProgramDoTw0rz3ni4Qu1zow') || u.fullName !== 'admin') {
-          listChanged = true;
-          return {
-            ...u,
-            fullName: 'admin',
-            role: 'admin',
-            password: hashPassword('ProgramDoTw0rz3ni4Qu1zow')
-          };
-        }
-      } else if (u.role === 'admin') {
-        listChanged = true;
-        return {
-          ...u,
-          role: 'teacher'
-        };
+  const loadQuizzesFromSupabase = async () => {
+    try {
+      const { data, error } = await supabase.from('quizzes').select('*');
+      if (!error && data) {
+        const formattedQuizzes: Quiz[] = data.map((q: any) => ({
+          id: q.id,
+          title: q.title,
+          description: q.description,
+          defaultDuration: q.default_duration,
+          creatorId: q.creator_id,
+          questions: q.questions
+        }));
+        setQuizzes(formattedQuizzes);
+        localStorage.setItem('quizzes_catalog', JSON.stringify(formattedQuizzes));
       }
-      return u;
-    });
-
-    if (!adminFound) {
-      // Remove stale admin@szkola.pl if it exists
-      updatedUsers = updatedUsers.filter((u: any) => u.email !== 'admin@szkola.pl');
-      updatedUsers.push({
-        ...DEFAULT_ADMIN_USER,
-        password: hashPassword('ProgramDoTw0rz3ni4Qu1zow')
-      });
-      listChanged = true;
+    } catch (err) {
+      console.error('Failed to load quizzes:', err);
     }
+  };
 
-    // Migrate existing plain-text passwords in database to secure SHA-256 hashes and force proper roles
-    updatedUsers = updatedUsers.map((u: any) => {
-      let isChanged = false;
-      let newPass = u.password;
-      let newRole = u.role;
+  const loadResultsFromSupabase = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('player_results')
+        .select('*')
+        .order('timestamp', { ascending: false });
 
-      const isHexSha256 = /^[a-f0-9]{64}$/.test(u.password || '');
-      if (u.password && !isHexSha256) {
-        newPass = hashPassword(u.password);
-        isChanged = true;
+      if (!error && data) {
+        const formattedResults: PlayerResult[] = data.map((res: any) => ({
+          id: res.id,
+          roomCode: res.room_code,
+          firstName: res.first_name,
+          lastName: res.last_name,
+          className: res.class_name,
+          quizTitle: res.quiz_title,
+          answers: res.answers,
+          score: res.score,
+          totalQuestions: res.total_questions,
+          percentage: res.percentage,
+          timestamp: res.timestamp,
+          timeRemaining: res.time_remaining
+        }));
+        setAllResults(formattedResults);
+        localStorage.setItem('player_results', JSON.stringify(formattedResults));
       }
-
-      if (u.email === 'nauczyciel@szkola.pl' && u.role === 'admin') {
-        newRole = 'teacher';
-        isChanged = true;
-      }
-
-      if (isChanged) {
-        listChanged = true;
-        return {
-          ...u,
-          password: newPass,
-          role: newRole
-        };
-      }
-      return u;
-    });
-
-    if (listChanged) {
-      localStorage.setItem('registered_users', JSON.stringify(updatedUsers));
+    } catch (err) {
+      console.error('Failed to load player results:', err);
     }
+  };
 
-    // Initialize default teacher registration codes if empty
-    const cachedCodes = localStorage.getItem('teacher_registration_codes');
-    if (!cachedCodes) {
-      localStorage.setItem('teacher_registration_codes', JSON.stringify([]));
-    }
-  }, []);
+  const loadActiveRoomsFromSupabase = async () => {
+    try {
+      const { data, error } = await supabase.from('active_rooms').select('*');
+      if (!error && data) {
+        const formattedRooms: ActiveRoom[] = data.map((r: any) => ({
+          code: r.code,
+          quizId: r.quiz_id,
+          quizTitle: r.quiz_title,
+          status: r.status,
+          startedAt: r.started_at,
+          createdAt: r.created_at,
+          duration: r.duration,
+          joinedPlayers: r.joined_players || []
+        }));
+        setActiveRooms(formattedRooms);
+        localStorage.setItem('active_rooms', JSON.stringify(formattedRooms));
 
-  // Sync back to local storage and bind cross-tab storage changes!
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'active_rooms') {
-        const updated = JSON.parse(e.newValue || '[]');
-        setActiveRooms(updated);
-        
-        // If the student has entered a room and is currently viewing it, update the local student room state too!
         if (activeStudentRoom) {
-          const match = updated.find((r: ActiveRoom) => r.code === activeStudentRoom.code);
+          const match = formattedRooms.find((r: ActiveRoom) => r.code === activeStudentRoom.code);
           if (match) {
             setActiveStudentRoom(match);
           } else {
-            // Room got cancelled
             setActiveStudentRoom(null);
-            setJoinError('Pokój został zamknięty przez osobę prowadzącą.');
+            setJoinError('Pokój został zamknięty lub zakończony przez osobę prowadzącą.');
           }
         }
       }
-      if (e.key === 'player_results') {
-        setAllResults(JSON.parse(e.newValue || '[]'));
+    } catch (err) {
+      console.error('Failed to load active rooms:', err);
+    }
+  };
+
+  const seedDefaultUsersAndQuizzesToSupabase = async () => {
+    try {
+      // Seed default admin user: ProgramDoTw0rz3ni4Qu1zow
+      const adminPassHash = hashPassword('ProgramDoTw0rz3ni4Qu1zow');
+      const { data: adminCheck } = await supabase.from('profiles').select('id').eq('email', 'admin').maybeSingle();
+      if (!adminCheck) {
+        await supabase.from('profiles').insert({
+          id: 'usr-admin',
+          email: 'admin',
+          full_name: 'admin',
+          password_hash: adminPassHash,
+          role: 'admin'
+        });
       }
-      if (e.key === 'quizzes_catalog') {
-        setQuizzes(JSON.parse(e.newValue || '[]'));
+
+      // Seed default teacher user
+      const teacherPassHash = hashPassword('nauczyciel123');
+      const { data: teacherCheck } = await supabase.from('profiles').select('id').eq('email', 'nauczyciel@szkola.pl').maybeSingle();
+      if (!teacherCheck) {
+        await supabase.from('profiles').insert({
+          id: 'usr-default-teacher',
+          email: 'nauczyciel@szkola.pl',
+          full_name: 'Tomasz Nauczyciel',
+          password_hash: teacherPassHash,
+          role: 'teacher'
+        });
       }
+
+      // Seed default quizzes if catalog is completely empty in database
+      const { data: quizzesCount } = await supabase.from('quizzes').select('id');
+      if (!quizzesCount || quizzesCount.length === 0) {
+        for (const quiz of DEFAULT_QUIZZES) {
+          await supabase.from('quizzes').insert({
+            id: quiz.id,
+            title: quiz.title,
+            description: quiz.description,
+            default_duration: quiz.defaultDuration,
+            creator_id: quiz.creatorId,
+            questions: quiz.questions
+          });
+        }
+        await loadQuizzesFromSupabase();
+      }
+    } catch (err) {
+      console.error('Data seeding to Supabase failed:', err);
+    }
+  };
+
+  const loadProfileRegCodes = async () => {
+    try {
+      const { data, error } = await supabase.from('registration_codes').select('*');
+      if (!error && data) {
+        const mapped = data.map((item: any) => ({
+          code: item.code,
+          expiresAt: item.expires_at ? new Date(item.expires_at).getTime() : null
+        }));
+        setProfileRegCodes(mapped);
+        localStorage.setItem('teacher_registration_codes', JSON.stringify(mapped));
+      }
+    } catch (e) {
+      console.error('Failed to loading reg codes:', e);
+    }
+  };
+
+  // Initial Data seed & load
+  useEffect(() => {
+    const initializeDataFlows = async () => {
+      await seedDefaultUsersAndQuizzesToSupabase();
+      await loadQuizzesFromSupabase();
+      await loadResultsFromSupabase();
+      await loadActiveRoomsFromSupabase();
     };
 
-    window.addEventListener('storage', handleStorageChange);
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
+    initializeDataFlows();
+
+    // Check localStorage logged in session of browser fallback
+    const cachedUser = localStorage.getItem('logged_in_user');
+    if (cachedUser) {
+      try {
+        setCurrentUser(JSON.parse(cachedUser));
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, []);
+
+  // Poll Active Rooms for state changes or players joining from other browser contexts
+  useEffect(() => {
+    loadActiveRoomsFromSupabase();
+    const interval = setInterval(() => {
+      loadActiveRoomsFromSupabase();
+    }, 2500);
+    return () => clearInterval(interval);
   }, [activeStudentRoom]);
 
   // Apply theme when selection changes or system settings change
@@ -273,25 +298,14 @@ export default function App() {
     }
   }, [theme]);
 
-  // Tick every second to refresh registration code expiration visually and clean up expired ones
+  // Tick every second to refresh registration codes from Supabase
   useEffect(() => {
     let timer: any;
     if (isProfileSettingsOpen && profileActiveTab === 'codes') {
+      loadProfileRegCodes();
       timer = setInterval(() => {
-        const now = Date.now();
-        const rawCodes = localStorage.getItem('teacher_registration_codes');
-        let parsed: any[] = [];
-        try {
-          parsed = JSON.parse(rawCodes || '[]');
-        } catch (e) {}
-        
-        const nonExpired = parsed.filter((item: any) => {
-          if (typeof item === 'string') return true;
-          return item.expiresAt > now;
-        }).map(item => typeof item === 'string' ? { code: item, expiresAt: now + 600000 } : item);
-        
-        setProfileRegCodes(nonExpired);
-      }, 1000);
+        loadProfileRegCodes();
+      }, 3000);
     }
     return () => clearInterval(timer);
   }, [isProfileSettingsOpen, profileActiveTab]);
@@ -311,30 +325,71 @@ export default function App() {
   // -------------------------------------------------------------
   // HANDLERS FOR TEACHER ACTIONS
   // -------------------------------------------------------------
-  const handleAddNewQuiz = (newQuiz: Quiz) => {
-    const updated = [...quizzes, newQuiz];
-    setQuizzes(updated);
-    localStorage.setItem('quizzes_catalog', JSON.stringify(updated));
+  const handleAddNewQuiz = async (newQuiz: Quiz) => {
+    try {
+      const { error } = await supabase.from('quizzes').insert({
+        id: newQuiz.id,
+        title: newQuiz.title,
+        description: newQuiz.description,
+        default_duration: newQuiz.defaultDuration,
+        creator_id: newQuiz.creatorId,
+        questions: newQuiz.questions
+      });
+      if (!error) {
+        setQuizzes((prev) => [...prev, newQuiz]);
+      } else {
+        alert(`Błąd podczas dodawania quizu: ${error.message}`);
+      }
+    } catch (e: any) {
+      alert(`Błąd połączenia z bazą: ${e.message}`);
+    }
   };
 
-  const handleEditQuiz = (editedQuiz: Quiz) => {
-    const updated = quizzes.map((q) => q.id === editedQuiz.id ? editedQuiz : q);
-    setQuizzes(updated);
-    localStorage.setItem('quizzes_catalog', JSON.stringify(updated));
+  const handleEditQuiz = async (editedQuiz: Quiz) => {
+    try {
+      const { error } = await supabase
+        .from('quizzes')
+        .update({
+          title: editedQuiz.title,
+          description: editedQuiz.description,
+          default_duration: editedQuiz.defaultDuration,
+          questions: editedQuiz.questions
+        })
+        .eq('id', editedQuiz.id);
+      if (!error) {
+        setQuizzes((prev) => prev.map((q) => (q.id === editedQuiz.id ? editedQuiz : q)));
+      } else {
+        alert(`Błąd edycji quizu: ${error.message}`);
+      }
+    } catch (e: any) {
+      alert(`Błąd połączenia z bazą: ${e.message}`);
+    }
   };
 
-  const handleDeleteQuiz = (quizId: string) => {
-    const updated = quizzes.filter((q) => q.id !== quizId);
-    setQuizzes(updated);
-    localStorage.setItem('quizzes_catalog', JSON.stringify(updated));
+  const handleDeleteQuiz = async (quizId: string) => {
+    try {
+      const { error } = await supabase.from('quizzes').delete().eq('id', quizId);
+      if (!error) {
+        setQuizzes((prev) => prev.filter((q) => q.id !== quizId));
+      } else {
+        alert(`Błąd usuwania quizu: ${error.message}`);
+      }
+    } catch (e: any) {
+      alert(`Błąd połączenia z bazą: ${e.message}`);
+    }
   };
 
-  const handleLaunchRoom = (quizId: string, customCode: string, durationSecs: number) => {
+  const handleLaunchRoom = async (quizId: string, customCode: string, durationSecs: number) => {
     const quiz = quizzes.find((q) => q.id === quizId);
     if (!quiz) return;
 
-    // Check if code is already occupied
-    const activeMatch = activeRooms.some((room) => room.code === customCode && room.status !== 'ended');
+    // Sprawdź czy kod jest wolny bezpośrednio w Supabase
+    const { data: activeMatch } = await supabase
+      .from('active_rooms')
+      .select('code')
+      .eq('code', customCode)
+      .maybeSingle();
+
     if (activeMatch) {
       alert(`Zajęty kod: Pokój o kodzie "${customCode}" już trwa bądź jest w gotowości. Wybierz inny kod.`);
       return;
@@ -351,143 +406,244 @@ export default function App() {
       joinedPlayers: [],
     };
 
-    const nextRooms = [newRoom, ...activeRooms.filter(r => r.code !== customCode)];
-    saveRoomsToCache(nextRooms);
-  };
+    try {
+      const { error } = await supabase.from('active_rooms').insert({
+        code: newRoom.code,
+        quiz_id: newRoom.quizId,
+        quiz_title: newRoom.quizTitle,
+        status: newRoom.status,
+        started_at: newRoom.startedAt,
+        created_at: newRoom.createdAt,
+        duration: newRoom.duration,
+        joined_players: newRoom.joinedPlayers
+      });
 
-  const handleStartRoom = (code: string) => {
-    const nextRooms = activeRooms.map((room) => {
-      if (room.code === code) {
-        return {
-          ...room,
-          status: 'in_progress' as const,
-          startedAt: Date.now(),
-        };
+      if (!error) {
+        setActiveRooms((prev) => [newRoom, ...prev.filter((r) => r.code !== customCode)]);
+      } else {
+        alert(`Błąd dodawania pokoju: ${error.message}`);
       }
-      return room;
-    });
-    saveRoomsToCache(nextRooms);
-
-    // If the student is on the same tab in wait mode, update them instantly
-    if (activeStudentRoom && activeStudentRoom.code === code) {
-      const liveMatch = nextRooms.find((r) => r.code === code);
-      if (liveMatch) setActiveStudentRoom(liveMatch);
+    } catch (e: any) {
+      alert(`Błąd połączenia z bazą: ${e.message}`);
     }
   };
 
-  const handleEndRoom = (code: string) => {
-    const nextRooms = activeRooms.filter((room) => room.code !== code);
-    saveRoomsToCache(nextRooms);
+  const handleStartRoom = async (code: string) => {
+    const startTime = Date.now();
+    try {
+      const { error } = await supabase
+        .from('active_rooms')
+        .update({ status: 'in_progress', started_at: startTime })
+        .eq('code', code);
 
-    if (activeStudentRoom && activeStudentRoom.code === code) {
-      setActiveStudentRoom(null);
+      if (!error) {
+        setActiveRooms((prev) =>
+          prev.map((room) => {
+            if (room.code === code) {
+              return {
+                ...room,
+                status: 'in_progress' as const,
+                startedAt: startTime,
+              };
+            }
+            return room;
+          })
+        );
+
+        if (activeStudentRoom && activeStudentRoom.code === code) {
+          setActiveStudentRoom((prev) =>
+            prev ? { ...prev, status: 'in_progress', startedAt: startTime } : null
+          );
+        }
+      } else {
+        alert(`Błąd uruchamiania pokoju: ${error.message}`);
+      }
+    } catch (e: any) {
+      alert(`Błąd uruchamiania pokoju: ${e.message}`);
     }
   };
 
-  const handleClearResults = () => {
-    saveResultsToCache([]);
+  const handleEndRoom = async (code: string) => {
+    try {
+      const { error } = await supabase.from('active_rooms').delete().eq('code', code);
+      if (!error) {
+        setActiveRooms((prev) => prev.filter((room) => room.code !== code));
+        if (activeStudentRoom && activeStudentRoom.code === code) {
+          setActiveStudentRoom(null);
+        }
+      } else {
+        alert(`Błąd zamykania pokoju: ${error.message}`);
+      }
+    } catch (e: any) {
+      alert(`Błąd połączenia z bazą: ${e.message}`);
+    }
+  };
+
+  const handleClearResults = async () => {
+    try {
+      const { error } = await supabase.from('player_results').delete().neq('id', 'placeholder-id');
+      if (!error) {
+        setAllResults([]);
+      } else {
+        alert(`Błąd czyszczenia wyników: ${error.message}`);
+      }
+    } catch (e: any) {
+      alert(`Błąd połączenia z bazą: ${e.message}`);
+    }
   };
 
   // -------------------------------------------------------------
   // HANDLERS FOR STUDENT ACTIONS
   // -------------------------------------------------------------
-  const handleSearchGameCode = (e: React.FormEvent) => {
+  const handleSearchGameCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setJoinError('');
 
     const query = gameCodeInput.trim().toUpperCase();
     if (!query) return;
 
-    // Find first active room in matching code
-    const matchingRoom = activeRooms.find((r) => r.code === query);
-    if (!matchingRoom) {
-      setJoinError('Nie znaleziono aktywnego pokoju. Poproś prowadzącego o prawidłowy kod gry.');
-      return;
-    }
+    try {
+      const { data, error } = await supabase
+        .from('active_rooms')
+        .select('*')
+        .eq('code', query)
+        .maybeSingle();
 
-    setActiveStudentRoom(matchingRoom);
+      if (error || !data) {
+        setJoinError('Nie znaleziono aktywnego pokoju. Poproś prowadzącego o prawidłowy kod gry.');
+        return;
+      }
+
+      const matchingRoom: ActiveRoom = {
+        code: data.code,
+        quizId: data.quiz_id,
+        quizTitle: data.quiz_title,
+        status: data.status,
+        startedAt: data.started_at,
+        createdAt: data.created_at,
+        duration: data.duration,
+        joinedPlayers: data.joined_players || []
+      };
+
+      setActiveStudentRoom(matchingRoom);
+    } catch (e: any) {
+      setJoinError('Błąd połączenia z bazą.');
+    }
   };
 
-  // When student submits their identity to join the room
-  const handlePlayerJoinRoom = (player: Player) => {
+  const handlePlayerJoinRoom = async (player: Player) => {
     if (!activeStudentRoom) return;
 
-    const updatedRooms = activeRooms.map((room) => {
-      if (room.code === activeStudentRoom.code) {
-        // Prevent duplicate joining of identical device ID
-        const existingId = room.joinedPlayers.some((p) => p.id === player.id);
-        const joinedPlayers = existingId
-          ? room.joinedPlayers.map(p => p.id === player.id ? player : p)
-          : [...room.joinedPlayers, player];
+    try {
+      const existingId = activeStudentRoom.joinedPlayers.some((p) => p.id === player.id);
+      const updatedPlayers = existingId
+        ? activeStudentRoom.joinedPlayers.map((p) => (p.id === player.id ? player : p))
+        : [...activeStudentRoom.joinedPlayers, player];
 
-        return { ...room, joinedPlayers };
+      const { error } = await supabase
+        .from('active_rooms')
+        .update({ joined_players: updatedPlayers })
+        .eq('code', activeStudentRoom.code);
+
+      if (!error) {
+        setActiveRooms((prev) =>
+          prev.map((room) => {
+            if (room.code === activeStudentRoom.code) {
+              return { ...room, joinedPlayers: updatedPlayers };
+            }
+            return room;
+          })
+        );
+        setActiveStudentRoom((prev) => (prev ? { ...prev, joinedPlayers: updatedPlayers } : null));
+      } else {
+        alert(`Błąd dołączania do pokoju: ${error.message}`);
       }
-      return room;
-    });
-
-    saveRoomsToCache(updatedRooms);
-    
-    // Update local state copy
-    const activeMatch = updatedRooms.find(r => r.code === activeStudentRoom.code);
-    if (activeMatch) {
-      setActiveStudentRoom(activeMatch);
+    } catch (e: any) {
+      alert(`Błąd połączenia z bazą: ${e.message}`);
     }
   };
 
-  // When student quiz finishes, append result log
-  const handleSaveStudentResult = (result: PlayerResult) => {
-    const nextResults = [result, ...allResults];
-    saveResultsToCache(nextResults);
+  const handleSaveStudentResult = async (result: PlayerResult) => {
+    try {
+      const { error } = await supabase.from('player_results').insert({
+        id: result.id,
+        room_code: result.roomCode,
+        first_name: result.firstName,
+        last_name: result.lastName,
+        class_name: result.className,
+        quiz_title: result.quizTitle,
+        answers: result.answers,
+        score: result.score,
+        total_questions: result.totalQuestions,
+        percentage: result.percentage,
+        timestamp: result.timestamp,
+        time_remaining: result.timeRemaining
+      });
 
-    // Also link result history to logged-in students
-    if (currentUser && currentUser.role === 'student') {
-      const personalHistory = JSON.parse(localStorage.getItem(`student_history_${currentUser.id}`) || '[]');
-      personalHistory.unshift(result);
-      localStorage.setItem(`student_history_${currentUser.id}`, JSON.stringify(personalHistory));
+      if (!error) {
+        setAllResults((prev) => [result, ...prev]);
+        if (currentUser && currentUser.role === 'student') {
+          const personalHistory = JSON.parse(
+            localStorage.getItem(`student_history_${currentUser.id}`) || '[]'
+          );
+          personalHistory.unshift(result);
+          localStorage.setItem(`student_history_${currentUser.id}`, JSON.stringify(personalHistory));
+        }
+      } else {
+        alert(`Błąd zapisu wyniku: ${error.message}`);
+      }
+    } catch (e: any) {
+      alert(`Błąd połączenia: ${e.message}`);
     }
   };
 
   // -------------------------------------------------------------
   // AUTHENTICATION LOGIC
   // -------------------------------------------------------------
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
     setAuthSuccess('');
 
-    const usersList = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const hashedAuthPassword = hashPassword(authPassword);
-    const match = usersList.find(
-      (u: any) => u.email === authEmail.trim() && u.password === hashedAuthPassword
-    );
+    const hashedPass = hashPassword(authPassword);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', authEmail.trim())
+        .eq('password_hash', hashedPass)
+        .maybeSingle();
 
-    if (!match) {
-      setAuthError('Nieprawidłowy adres e-mail lub hasło.');
-      return;
-    }
+      if (error || !data) {
+        setAuthError('Nieprawidłowy adres e-mail lub hasło.');
+        return;
+      }
 
-    const payload: User = {
-      id: match.id,
-      email: match.email,
-      fullName: match.fullName,
-      role: match.role,
-    };
+      const payload: User = {
+        id: data.id,
+        email: data.email,
+        fullName: data.full_name,
+        role: data.role,
+      };
 
-    setCurrentUser(payload);
-    localStorage.setItem('logged_in_user', JSON.stringify(payload));
-    setIsLoginOpen(false);
-    setAuthEmail('');
-    setAuthPassword('');
+      setCurrentUser(payload);
+      localStorage.setItem('logged_in_user', JSON.stringify(payload));
+      setIsLoginOpen(false);
+      setAuthEmail('');
+      setAuthPassword('');
 
-    // If logged in as admin or teacher, route to panel automatically
-    if (payload.role === 'admin' || payload.role === 'teacher') {
-      setCurrentView('admin');
-    } else {
-      setCurrentView('student-history');
+      // If logged in as admin or teacher, route to panel automatically
+      if (payload.role === 'admin' || payload.role === 'teacher') {
+        setCurrentView('admin');
+      } else {
+        setCurrentView('student-history');
+      }
+    } catch (err: any) {
+      setAuthError(`Błąd połączenia z bazą: ${err.message}`);
     }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
     setAuthSuccess('');
@@ -509,69 +665,80 @@ export default function App() {
     }
 
     const verificationCode = authInviteCode.trim().toUpperCase();
-    const codesList: any[] = JSON.parse(localStorage.getItem('teacher_registration_codes') || '[]');
-    
-    // Find the index of matching, active, non-expired registration code
-    const matchedCodeIndex = codesList.findIndex(c => {
-      const codeStr = (typeof c === 'string' ? c : c.code).toUpperCase();
-      if (codeStr !== verificationCode) return false;
-      
-      // If code is an object, check expiration
-      if (typeof c !== 'string' && c.expiresAt) {
-        return c.expiresAt > Date.now();
+
+    try {
+      // Sprawdź kod rejestracji w Supabase
+      const { data: matchedCode, error: codeErr } = await supabase
+        .from('registration_codes')
+        .select('*')
+        .eq('code', verificationCode)
+        .maybeSingle();
+
+      if (codeErr || !matchedCode) {
+        setAuthError('Podany kod rejestracji nauczyciela jest niepoprawny, został już zużyty lub wygasł.');
+        return;
       }
-      return true;
-    });
 
-    if (matchedCodeIndex === -1) {
-      setAuthError('Podany kod rejestracji nauczyciela jest niepoprawny, został już zużyty lub wygasł.');
-      return;
+      if (matchedCode.expires_at && new Date(matchedCode.expires_at).getTime() < Date.now()) {
+        setAuthError('Podany kod rejestracji nauczyciela wygasł.');
+        return;
+      }
+
+      // Sprawdź czy e-mail już istnieje
+      const { data: emailMatch } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', authEmail.trim())
+        .maybeSingle();
+
+      if (emailMatch) {
+        setAuthError('Konto o podanym adresie email już istnieje.');
+        return;
+      }
+
+      const hashedPassword = hashPassword(authPassword);
+      const newUserId = `usr-${Date.now()}`;
+
+      // Utwórz nowy profil
+      const { error: insertErr } = await supabase.from('profiles').insert({
+        id: newUserId,
+        email: authEmail.trim(),
+        full_name: authFullName.trim(),
+        password_hash: hashedPassword,
+        role: 'teacher'
+      });
+
+      if (insertErr) {
+        setAuthError(`Nie udało się utworzyć konta: ${insertErr.message}`);
+        return;
+      }
+
+      // Usuń zużyty kod z Supabase
+      await supabase.from('registration_codes').delete().eq('code', verificationCode);
+
+      setAuthSuccess('Konto Nauczyciela zostało zarejestrowane pomyślnie przy użyciu kodu.');
+
+      const userSession: User = {
+        id: newUserId,
+        email: authEmail.trim(),
+        fullName: authFullName.trim(),
+        role: 'teacher',
+      };
+
+      setCurrentUser(userSession);
+      localStorage.setItem('logged_in_user', JSON.stringify(userSession));
+      setIsRegisterOpen(false);
+
+      // Reset inputs
+      setAuthEmail('');
+      setAuthPassword('');
+      setAuthFullName('');
+      setAuthInviteCode('');
+
+      setCurrentView('admin');
+    } catch (err: any) {
+      setAuthError(`Wystąpił błąd podczas rejestracji: ${err.message}`);
     }
-
-    const usersList = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const emailExists = usersList.some((u: any) => u.email === authEmail.trim());
-
-    if (emailExists) {
-      setAuthError('Konto o podanym adresie email już istnieje.');
-      return;
-    }
-
-    const newUserPayload = {
-      id: `usr-${Date.now()}`,
-      email: authEmail.trim(),
-      password: hashPassword(authPassword),
-      fullName: authFullName.trim(),
-      role: 'teacher' as const,
-    };
-
-    // Consume the registration code (automatically deletes it upon use)
-    const updatedCodesList = codesList.filter((_, index) => index !== matchedCodeIndex);
-    localStorage.setItem('teacher_registration_codes', JSON.stringify(updatedCodesList));
-
-    usersList.push(newUserPayload);
-    localStorage.setItem('registered_users', JSON.stringify(usersList));
-
-    setAuthSuccess('Konto Nauczyciela zostało zarejestrowane pomyślnie przy użyciu kodu.');
-    
-    // Auto-login registered user instantly for speed
-    const userSession: User = {
-      id: newUserPayload.id,
-      email: newUserPayload.email,
-      fullName: newUserPayload.fullName,
-      role: newUserPayload.role,
-    };
-    
-    setCurrentUser(userSession);
-    localStorage.setItem('logged_in_user', JSON.stringify(userSession));
-    setIsRegisterOpen(false);
-
-    // Reset inputs
-    setAuthEmail('');
-    setAuthPassword('');
-    setAuthFullName('');
-    setAuthInviteCode('');
-
-    setCurrentView('admin');
   };
 
   const handleLogout = () => {
@@ -580,7 +747,7 @@ export default function App() {
     setCurrentView('home');
   };
 
-  const handleProfileSettingsSubmit = (e: React.FormEvent) => {
+  const handleProfileSettingsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileError('');
     setProfileSuccess('');
@@ -593,70 +760,86 @@ export default function App() {
       return;
     }
 
-    const usersList = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const userIndex = usersList.findIndex((u: any) => u.id === currentUser.id);
+    try {
+      // Pobierz bieżący rekord użytkownika z Supabase do walidacji hasła
+      const { data: userProfile, error: fetchErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .maybeSingle();
 
-    if (userIndex === -1) {
-      setProfileError('Nie znaleziono Twojego konta w bazie.');
-      return;
+      if (fetchErr || !userProfile) {
+        setProfileError('Nie znaleziono Twojego konta w bazie.');
+        return;
+      }
+
+      let newHashedPassword = userProfile.password_hash;
+      let isPasswordChanged = false;
+
+      if (profileCurrentPassword || profileNewPassword || profileConfirmPassword) {
+        if (!profileCurrentPassword || !profileNewPassword || !profileConfirmPassword) {
+          setProfileError('Aby zmienić hasło, musisz podać obecne hasło, nowe hasło oraz je potwierdzić.');
+          return;
+        }
+
+        if (profileNewPassword !== profileConfirmPassword) {
+          setProfileError('Nowe hasła nie są ze sobą zgodne.');
+          return;
+        }
+
+        // Walidacja nowego hasła: min 8 znaków, małe, duże litery, cyfra
+        const isLengthValid = profileNewPassword.length >= 8;
+        const hasUppercase = /[A-Z]/.test(profileNewPassword);
+        const hasLowercase = /[a-z]/.test(profileNewPassword);
+        const hasDigit = /[0-9]/.test(profileNewPassword);
+
+        if (!isLengthValid || !hasUppercase || !hasLowercase || !hasDigit) {
+          setProfileError('Nowe hasło musi mieć co najmniej 8 znaków, składać się z małych i dużych liter oraz zawierać cyfrę.');
+          return;
+        }
+
+        const currentHashed = hashPassword(profileCurrentPassword);
+        if (userProfile.password_hash !== currentHashed) {
+          setProfileError('Obecne hasło jest niepoprawne.');
+          return;
+        }
+
+        newHashedPassword = hashPassword(profileNewPassword);
+        isPasswordChanged = true;
+      }
+
+      // Aktualizacja profilu w Supabase
+      const { error: updateErr } = await supabase
+        .from('profiles')
+        .update({ full_name: name, password_hash: newHashedPassword })
+        .eq('id', currentUser.id);
+
+      if (updateErr) {
+        setProfileError(`Błąd aktualizacji profilu: ${updateErr.message}`);
+        return;
+      }
+
+      // Update active session metadata
+      const updatedSession = {
+        ...currentUser,
+        fullName: name,
+      };
+      setCurrentUser(updatedSession);
+      localStorage.setItem('logged_in_user', JSON.stringify(updatedSession));
+
+      setProfileSuccess(
+        isPasswordChanged
+          ? 'Profil oraz hasło zostały zaktualizowane pomyślnie!'
+          : 'Profil został zaktualizowany pomyślnie!'
+      );
+
+      // Clear password fields
+      setProfileCurrentPassword('');
+      setProfileNewPassword('');
+      setProfileConfirmPassword('');
+    } catch (err: any) {
+      setProfileError(`Błąd połączenia z bazą: ${err.message}`);
     }
-
-    let isPasswordChanged = false;
-
-    if (profileCurrentPassword || profileNewPassword || profileConfirmPassword) {
-      if (!profileCurrentPassword || !profileNewPassword || !profileConfirmPassword) {
-        setProfileError('Aby zmienić hasło, musisz podać obecne hasło, nowe hasło oraz je potwierdzić.');
-        return;
-      }
-
-      if (profileNewPassword !== profileConfirmPassword) {
-        setProfileError('Nowe hasła nie są ze sobą zgodne.');
-        return;
-      }
-
-      // Walidacja nowego hasła: min 8 znaków, małe, duże litery, cyfra
-      const isLengthValid = profileNewPassword.length >= 8;
-      const hasUppercase = /[A-Z]/.test(profileNewPassword);
-      const hasLowercase = /[a-z]/.test(profileNewPassword);
-      const hasDigit = /[0-9]/.test(profileNewPassword);
-
-      if (!isLengthValid || !hasUppercase || !hasLowercase || !hasDigit) {
-        setProfileError('Nowe hasło musi mieć co najmniej 8 znaków, składać się z małych i dużych liter oraz zawierać cyfrę.');
-        return;
-      }
-
-      const currentHashed = hashPassword(profileCurrentPassword);
-      if (usersList[userIndex].password && usersList[userIndex].password !== currentHashed) {
-        setProfileError('Obecne hasło jest niepoprawne.');
-        return;
-      }
-
-      usersList[userIndex].password = hashPassword(profileNewPassword);
-      isPasswordChanged = true;
-    }
-
-    // Update name
-    usersList[userIndex].fullName = name;
-    localStorage.setItem('registered_users', JSON.stringify(usersList));
-
-    // Update active session metadata
-    const updatedSession = {
-      ...currentUser,
-      fullName: name,
-    };
-    setCurrentUser(updatedSession);
-    localStorage.setItem('logged_in_user', JSON.stringify(updatedSession));
-
-    setProfileSuccess(
-      isPasswordChanged 
-        ? 'Profil oraz hasło zostały zaktualizowane pomyślnie!' 
-        : 'Profil został zaktualizowany pomyślnie!'
-    );
-
-    // Clear password fields
-    setProfileCurrentPassword('');
-    setProfileNewPassword('');
-    setProfileConfirmPassword('');
 
     setTimeout(() => {
       setIsProfileSettingsOpen(false);
