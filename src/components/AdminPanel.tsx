@@ -1522,7 +1522,6 @@ export default function AdminPanel({
                           className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 cursor-pointer"
                         >
                           <option value="teacher">Nauczyciel (Prowadzenie zajęć, kody, quizy)</option>
-                          <option value="admin">Administrator (Zarządzanie kontami użytkowników)</option>
                           <option value="student">Student / Uczeń (Tylko rozwiązywanie quizów)</option>
                         </select>
                       </div>
