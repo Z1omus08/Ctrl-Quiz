@@ -4,11 +4,11 @@ export interface Question {
   answers: string[];
   correctAnswerIndex: number;
   type?: 'single' | 'multicheck' | 'text' | 'dropdown' | 'bricks';
-  correctAnswerIndices?: number[]; // For 'multicheck'
-  correctTextAnswers?: string[];   // For 'text' (alternative correct inputs, case-insensitive)
-  bricksText?: string;             // For 'bricks' (e.g. "Stolicą Polski jest [gap], a Francji [gap].")
-  bricksCorrectAnswers?: string[]; // For 'bricks' (correct words for gaps in order)
-  points?: number;                 // Custom points, if undefined falls back to default
+  correctAnswerIndices?: number[]; // Dla 'multicheck'
+  correctTextAnswers?: string[];   // Dla 'text' (opcjonalne, bez znaczenia wielkość liter)
+  bricksText?: string;             // Dla 'bricks' (np. "Stolicą Polski jest [gap], a Francji [gap].")
+  bricksCorrectAnswers?: string[]; // Dla 'bricks' (poprawne ułożenie luk)
+  points?: number;                 // Indywidualna punktacja za pytanie
 }
 
 export interface Quiz {
@@ -17,7 +17,7 @@ export interface Quiz {
   description: string;
   questions: Question[];
   creatorId: string;
-  defaultDuration: number; // in seconds
+  defaultDuration: number; // w sekundach
 }
 
 export interface Player {
@@ -35,9 +35,9 @@ export interface ActiveRoom {
   quizId: string;
   quizTitle: string;
   status: RoomStatus;
-  startedAt: number | null; // Timestamp when started
+  startedAt: number | null;
   createdAt: number;
-  duration: number; // Duration of quiz in seconds
+  duration: number; // Limit czasu w sekundach
   joinedPlayers: Player[];
 }
 
@@ -48,12 +48,12 @@ export interface PlayerResult {
   lastName: string;
   className: string;
   quizTitle: string;
-  answers: { [questionIndex: number]: any }; // questionIndex -> selected index, array of indices, string, or ordered bricks
-  score: number; // number of correct answers
-  totalQuestions: number;
-  percentage: number; // calculated percentage
+  answers: { [questionIndex: number]: any }; // Odpowiedź studenta na dane pytanie
+  score: number; // Suma uzyskanych punktów
+  totalQuestions: number; // Maksymalna możliwa punktacja
+  percentage: number; // Wynik procentowy
   timestamp: number;
-  timeRemaining?: number; // raw time left when finished
+  timeRemaining?: number; // Czas, jaki pozostał
 }
 
 export interface User {
@@ -99,7 +99,6 @@ export function calculateQuestionScore(question: Question, studentAnswer: any): 
     return correctGapsCount;
   }
 
-  // For other types, they are either fully correct (get maxPoints) or wrong (0)
   const isCorrect = isQuestionCorrectFallback(question, studentAnswer);
   return isCorrect ? getQuestionMaxPoints(question) : 0;
 }
@@ -141,5 +140,3 @@ export function formatPolishPoints(pts: number): string {
   }
   return `${pts} punktów`;
 }
-
-

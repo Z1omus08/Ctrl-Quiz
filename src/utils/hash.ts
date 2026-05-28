@@ -1,5 +1,5 @@
 export function hashPassword(str: string): string {
-  // Simple, fast and robust SHA-256 implementation of standard secure hashing
+  // Szybka, bezbiblioteczna i bezpieczna implementacja skrótu SHA-256
   let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
   let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
 
@@ -14,7 +14,6 @@ export function hashPassword(str: string): string {
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
   ];
 
-  // We add a static salt to prevent rainbow table attacks
   const saltedStr = `MEMO_QUIZ_SALT_${str}`;
 
   const words = [];

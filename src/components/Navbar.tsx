@@ -25,7 +25,6 @@ export default function Navbar({
   return (
     <header className="border-b border-[#E5E0D5] bg-[#FDFBF7]/90 backdrop-blur-md sticky top-0 z-40">
       <div id="navbar-container" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Left Side Logo */}
         <div 
           id="nav-logo" 
           onClick={() => (currentUser?.role === 'admin' || currentUser?.role === 'teacher') ? setView('admin') : setView('home')} 
@@ -40,11 +39,9 @@ export default function Navbar({
           </div>
         </div>
 
-        {/* Right Side Navigation and Action Buttons */}
         <div id="nav-actions" className="flex items-center gap-3">
           {currentUser ? (
             <div className="flex items-center gap-3">
-              {/* Show navigation depending on role */}
               {currentUser.role === 'student' && (
                 <button
                   id="nav-student-history"
@@ -60,7 +57,6 @@ export default function Navbar({
                 </button>
               )}
 
-              {/* User badge */}
               <div className="flex flex-col items-end text-right hidden md:block">
                 <span className="text-sm font-semibold text-[#2D3436]">{currentUser.fullName}</span>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#5F7A61] bg-[#5F7A61]/10 px-2 py-0.5 rounded-full">
@@ -68,7 +64,6 @@ export default function Navbar({
                 </span>
               </div>
 
-              {/* Settings Button */}
               <button
                 id="nav-settings-btn"
                 onClick={onOpenProfileSettings}
@@ -79,7 +74,6 @@ export default function Navbar({
                 <span className="hidden sm:inline">Ustawienia</span>
               </button>
 
-              {/* Logout Button */}
               <button
                 id="nav-logout-btn"
                 onClick={onLogout}
@@ -113,7 +107,6 @@ export default function Navbar({
         </div>
       </div>
 
-      {/* Small Screen Secondary Sub-Navbar for Quick Routing */}
       {currentUser && currentUser.role === 'student' && (
         <div className="sm:hidden flex border-t border-[#E5E0D5] bg-[#F7F3E9]/50 px-4 py-2 justify-around gap-2 text-xs font-semibold">
           <button
