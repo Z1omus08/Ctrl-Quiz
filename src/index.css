@@ -1,0 +1,429 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Lora:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Lora", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg-cream: #FDFBF7;
+  --bg-alt: #F7F3E9;
+  --text-dark: #2D3436;
+  --text-charcoal: #3E3E3E;
+  --text-greenish: #8C9B81;
+  --green: #5F7A61;
+  --border: #E5E0D5;
+}
+
+.dark {
+  --bg-cream: #141617;
+  --bg-alt: #1F2224;
+  --text-dark: #F3F4F6;
+  --text-charcoal: #E5E7EB;
+  --text-greenish: #9CA3AF;
+  --green: #6C856D;
+  --border: #2D3235;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-cream);
+  color: var(--text-charcoal);
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.15s ease;
+}
+
+/* 
+  Elegant automatic theme overrides for existing hardcoded light hex classes.
+  This ensures 100% complete coverage and visual harmony without breaking existing UI.
+*/
+
+.dark {
+  /* Class Override: bg-[#FDFBF7] */
+  .bg-\[\#FDFBF7\] {
+    background-color: #141617 !important;
+  }
+  .bg-\[\#FDFBF7\]\/90 {
+    background-color: rgba(20, 22, 23, 0.9) !important;
+  }
+  .bg-\[\#FDFBF7\]\/80 {
+    background-color: rgba(20, 22, 23, 0.8) !important;
+  }
+
+  /* Class Override: bg-[#F7F3E9] */
+  .bg-\[\#F7F3E9\] {
+    background-color: #1F2224 !important;
+  }
+  .bg-\[\#F7F3E9\]\/50 {
+    background-color: rgba(31, 34, 36, 0.5) !important;
+  }
+  .bg-\[\#F7F3E9\]\/80 {
+    background-color: rgba(31, 34, 36, 0.8) !important;
+  }
+  .bg-\[\#F7F3E9\]\/60 {
+    background-color: rgba(31, 34, 36, 0.6) !important;
+  }
+
+  /* Class Override: bg-[#5F7A61]/10 */
+  .bg-\[\#5F7A61\]\/10 {
+    background-color: rgba(108, 133, 109, 0.18) !important;
+    color: #9ECBA0 !important;
+  }
+  
+  /* Class Override: bg-[#5F7A61]/5 */
+  .bg-\[\#5F7A61\]\/5 {
+    background-color: rgba(108, 133, 109, 0.08) !important;
+  }
+
+  /* Container Borders Made Light/Bright & Distinct */
+  .border-\[\#E5E0D5\] {
+    border-color: #8C9496 !important;
+  }
+  .border-\[\#E5E0D5\]\/20 {
+    border-color: rgba(140, 148, 150, 0.4) !important;
+  }
+  .border-slate-100 {
+    border-color: #8C9496 !important;
+  }
+  .border-slate-150 {
+    border-color: #8C9496 !important;
+  }
+  .border-slate-200 {
+    border-color: #8C9496 !important;
+  }
+  .border-slate-350 {
+    border-color: #A3ABB0 !important;
+  }
+  .border-slate-300 {
+    border-color: #A3ABB0 !important;
+  }
+
+  /* Class Override: text-[#2D3436] */
+  .text-\[\#2D3436\] {
+    color: #F3F4F6 !important;
+  }
+
+  /* Class Override: text-[#3E3E3E] */
+  .text-\[\#3E3E3E\] {
+    color: #E5E7EB !important;
+  }
+  .text-\[\#3E3E3E\]\/85 {
+    color: rgba(229, 231, 235, 0.85) !important;
+  }
+
+  /* Class Override: text-[#8C9B81] */
+  .text-\[\#8C9B81\] {
+    color: #B0B9AA !important;
+  }
+  
+  /* Text and link details */
+  .text-slate-800 {
+    color: #F3F4F6 !important;
+  }
+  .text-slate-700 {
+    color: #E5E7EB !important;
+  }
+  .text-slate-600 {
+    color: #D1D5DB !important;
+  }
+  .text-slate-500 {
+    color: #A3A69F !important;
+  }
+  .text-slate-400 {
+    color: #8C9496 !important;
+  }
+
+  /* Modals background adjustment */
+  .bg-\[#FDFBF7\] {
+    background-color: #141617 !important;
+  }
+
+  /* Secondary cards or slate backgrounds */
+  .bg-white {
+    background-color: #161819 !important;
+  }
+  .bg-slate-50 {
+    background-color: #1A1C1D !important;
+  }
+  .bg-slate-100 {
+    background-color: #202325 !important;
+  }
+  .bg-slate-50\/50 {
+    background-color: rgba(26, 28, 29, 0.5) !important;
+  }
+  .hover\:bg-slate-50:hover {
+    background-color: #222527 !important;
+  }
+  .hover\:bg-slate-100:hover {
+    background-color: #282C2E !important;
+  }
+
+  /* Forms inputs with light borders */
+  input, select, textarea {
+    background-color: #1A1C1D !important;
+    color: #F3F4F6 !important;
+    border-color: #8C9496 !important;
+  }
+  input::placeholder {
+    color: #718086 !important;
+  }
+
+  /* Light green text inside widgets */
+  .text-\[\#5F7A61\] {
+    color: #8FB291 !important;
+  }
+  .border-\[\#5F7A61\]\/25 {
+    border-color: rgba(143, 178, 145, 0.45) !important;
+  }
+  
+  /* Tables and details shadow elements */
+  .divide-y > :not([hidden]) ~ :not([hidden]) {
+    border-color: #8C9496 !important;
+  }
+
+  /* Pink and Rose alert containers override to elegant dark wine colors */
+  .bg-pink-50, .bg-rose-50 {
+    background-color: #2C1420 !important;
+  }
+  .bg-pink-100, .bg-rose-100 {
+    background-color: #3D1B2D !important;
+  }
+  .text-pink-600, .text-rose-600, .text-pink-700, .text-rose-700 {
+    color: #F472B6 !important;
+  }
+  .border-pink-100, .border-rose-100, .border-pink-200, .border-rose-200 {
+    border-color: #EC4899 !important;
+  }
+
+  /* Amber alerts (warnings) */
+  .bg-amber-50 {
+    background-color: #2E2214 !important;
+  }
+  .text-amber-700 {
+    color: #FBBF24 !important;
+  }
+  .border-amber-100, .border-amber-150 {
+    border-color: #FBBF24 !important;
+  }
+
+  /* ==========================================
+     BUTTONS EXCEPTION FLOW (Wyróżniające się)
+     Make buttons highly distinctive so they stand out
+     and don't inherit default border styles.
+     ========================================== */
+  button, 
+  .button,
+  [role="button"],
+  input[type="button"],
+  input[type="submit"] {
+    font-weight: 700 !important;
+    transition: all 0.2s ease-in-out !important;
+  }
+
+  /* Primary action buttons */
+  button.bg-\[\#5F7A61\],
+  button[class*="bg-\[#5F7A61\]"] {
+    background-color: #5F7A61 !important;
+    border: 1.5px solid #A4C5A6 !important; /* Standout bright light-green border override */
+    color: #FFFFFF !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.15) !important;
+  }
+  button.bg-\[\#5F7A61\]:hover,
+  button[class*="bg-\[#5F7A61\]"]:hover {
+    background-color: #728F74 !important;
+    transform: scale(1.02);
+    box-shadow: 0 0 10px rgba(114, 143, 116, 0.4) !important;
+  }
+
+  /* Delete / Danger actions (Pink/Rose buttons) */
+  button.bg-pink-600,
+  button.bg-rose-600,
+  button[class*="bg-pink-"],
+  button[class*="bg-rose-"],
+  button[class*="text-pink-600"],
+  button[class*="text-rose-600"] {
+    background-color: #EC4899 !important; /* Intense vibrant pink */
+    border: 1.5px solid #F472B6 !important; /* Standout soft pink border to pop */
+    color: #FFFFFF !important;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3) !important;
+  }
+  button.bg-pink-600:hover,
+  button.bg-rose-600:hover,
+  button[class*="bg-pink-"]:hover,
+  button[class*="bg-rose-"]:hover {
+    background-color: #F43F5E !important;
+    transform: scale(1.02);
+    box-shadow: 0 0 10px rgba(236, 72, 153, 0.4) !important;
+  }
+
+  /* Interactive state list items acting as options */
+  .cursor-pointer[class*="hover:bg-slate-100"]:hover,
+  .cursor-pointer[class*="hover:bg-slate-50"]:hover {
+    background-color: #2F3336 !important;
+    border-color: #B2B9BC !important;
+  }
+
+  /* Dark mode logout button styling override */
+  #nav-logout-btn {
+    background-color: transparent !important;
+    background: transparent !important;
+    color: #F472B6 !important;
+    border: 1px solid transparent !important;
+    transition: all 0.2s ease-in-out !important;
+  }
+  #nav-logout-btn * {
+    color: #F472B6 !important;
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+  #nav-logout-btn:hover {
+    background-color: rgba(244, 114, 182, 0.12) !important;
+    background: rgba(244, 114, 182, 0.12) !important;
+    border-color: rgba(244, 114, 182, 0.3) !important;
+    color: #F9A8D4 !important;
+    opacity: 1 !important;
+  }
+  #nav-logout-btn:hover * {
+    color: #F9A8D4 !important;
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+}
+
+/* Light mode logout button styling override */
+#nav-logout-btn {
+  background-color: transparent !important;
+  background: transparent !important;
+  color: #DB2777 !important;
+  border: 1px solid transparent !important;
+  transition: all 0.2s ease-in-out !important;
+}
+#nav-logout-btn * {
+  color: #DB2777 !important;
+  background-color: transparent !important;
+  background: transparent !important;
+}
+#nav-logout-btn:hover {
+  background-color: rgba(244, 114, 182, 0.08) !important;
+  background: rgba(244, 114, 182, 0.08) !important;
+  border-color: rgba(244, 114, 182, 0.22) !important;
+  color: #BE185D !important;
+  opacity: 1 !important;
+}
+#nav-logout-btn:hover * {
+  color: #BE185D !important;
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* ========================================================
+   CUSTOM STYLING FOR DELETE BUTTONS (POWDER PINK & SEMI-TRANSPARENT BG)
+   ======================================================== */
+.delete-btn-custom,
+button.delete-btn-custom {
+  background-color: rgba(244, 114, 182, 0.08) !important;
+  background: rgba(244, 114, 182, 0.08) !important;
+  color: #EC4899 !important;
+  border-color: rgba(244, 114, 182, 0.22) !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.delete-btn-custom svg,
+button.delete-btn-custom svg {
+  stroke: #EC4899 !important;
+  color: #EC4899 !important;
+}
+
+.delete-btn-custom span,
+button.delete-btn-custom span {
+  color: #EC4899 !important;
+}
+
+.delete-btn-custom:hover,
+button.delete-btn-custom:hover {
+  background-color: rgba(244, 114, 182, 0.16) !important;
+  background: rgba(244, 114, 182, 0.16) !important;
+  color: #DB2777 !important;
+  border-color: rgba(244, 114, 182, 0.35) !important;
+}
+
+.delete-btn-custom:hover svg,
+button.delete-btn-custom:hover svg {
+  stroke: #DB2777 !important;
+  color: #DB2777 !important;
+}
+
+.delete-btn-custom:hover span,
+button.delete-btn-custom:hover span {
+  color: #DB2777 !important;
+}
+
+/* Dark mode specific for delete buttons */
+.dark .delete-btn-custom,
+.dark button.delete-btn-custom {
+  background-color: rgba(249, 168, 212, 0.08) !important;
+  background: rgba(249, 168, 212, 0.08) !important;
+  color: #F472B6 !important;
+  border-color: rgba(249, 168, 212, 0.2) !important;
+}
+
+.dark .delete-btn-custom svg,
+.dark button.delete-btn-custom svg {
+  stroke: #F472B6 !important;
+  color: #F472B6 !important;
+}
+
+.dark .delete-btn-custom span,
+.dark button.delete-btn-custom span {
+  color: #F472B6 !important;
+}
+
+.dark .delete-btn-custom:hover,
+.dark button.delete-btn-custom:hover {
+  background-color: rgba(249, 168, 212, 0.16) !important;
+  background: rgba(249, 168, 212, 0.16) !important;
+  color: #F9A8D4 !important;
+  border-color: rgba(249, 168, 212, 0.35) !important;
+}
+
+.dark .delete-btn-custom:hover svg,
+.dark button.delete-btn-custom:hover svg {
+  stroke: #F9A8D4 !important;
+  color: #F9A8D4 !important;
+}
+
+.dark .delete-btn-custom:hover span,
+.dark button.delete-btn-custom:hover span {
+  color: #F9A8D4 !important;
+}
+
+/* ========================================================
+   LIGHT MODE OVERRIDES FOR RED/ROSE DELETION TO PINK
+   ======================================================== */
+:not(.dark) {
+  .bg-rose-50 {
+    background-color: #FDF2F8 !important; /* pink-50 */
+  }
+  .bg-rose-100 {
+    background-color: #FCE7F3 !important; /* pink-100 */
+  }
+  .text-rose-500 {
+    color: #EC4899 !important; /* pink-500 */
+  }
+  .text-rose-600 {
+    color: #DB2777 !important; /* pink-600 */
+  }
+  .text-rose-700, .text-rose-800 {
+    color: #BE185D !important; /* pink-700 */
+  }
+  .border-rose-100 {
+    border-color: #FCE7F3 !important; /* pink-100 */
+  }
+  .border-rose-150, .border-rose-200 {
+    border-color: #FBCFE8 !important; /* pink-200 */
+  }
+}
+

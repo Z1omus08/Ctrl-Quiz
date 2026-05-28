@@ -1,0 +1,6 @@
+{
+  "name": "Ctrl+Quiz",
+  "description": "Interaktywna platforma quizowa dla szkół i nauczycieli z systemem dołączania kodem, poczekalnią oraz panelem administracyjnym.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
